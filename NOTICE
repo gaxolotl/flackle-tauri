@@ -1,0 +1,24 @@
+Flackle Desktop is an unofficial client.
+
+Portions of the protocol implementation are derived from flackle-selfbot
+(https://github.com/gaxolotl/flackle-selfbot), Copyright (c) gaxolotl,
+licensed under the MIT License.
+
+Brand assets in `public/brand` are taken from flackle.com and remain the
+property of their respective owners. They are bundled only to identify the
+service this client connects to.
+
+Interface fonts:
+  - Manrope, Copyright (c) 2018 The Manrope Project Authors,
+    licensed under the SIL Open Font License 1.1.
+  - Satoshi, by Indian Type Foundry, distributed with Flackle's web client.
+
+Emoji artwork in `public/emoji` is from Twemoji
+(https://github.com/jdecked/twemoji), Copyright (c) Twitter, Inc and other
+contributors, licensed under CC-BY 4.0.
+
+Channel icons are from Heroicons (https://github.com/tailwindlabs/heroicons),
+Copyright (c) Tailwind Labs, Inc., licensed under the MIT License.
+
+Flackle Desktop is not affiliated with Flackle or Folkward LLC.
+"Flackle" is used only to describe compatibility with the service.

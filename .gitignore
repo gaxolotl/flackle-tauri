@@ -1,0 +1,10 @@
+/target
+node_modules
+/dist
+/src-tauri/target
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
+/reference

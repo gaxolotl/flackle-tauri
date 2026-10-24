@@ -1,0 +1,229 @@
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/manrope-variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/satoshi-variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/fonts/satoshi-italic.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --bg: #08080b;
+  --bg-soft: #0b0b0f;
+  --titlebar: #08080b;
+  --rail: #060609;
+  --sidebar: #0d0d0f;
+  --chat: #0f0f14;
+  --panel: #14141b;
+  --panel-2: #17171d;
+  --panel-3: #1a1a21;
+  --card: #121218;
+  --input: #0b0b0f;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --text: #ffffff;
+  --text-dim: #b7b7c1;
+  --muted: #7b7b87;
+  --accent: #ef5252;
+  --accent-rgb: 239, 82, 82;
+  --brand: #ff3b3b;
+  --accent-dim: rgba(var(--accent-rgb), 0.12);
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --hover: rgba(255, 255, 255, 0.045);
+  --active: rgba(255, 255, 255, 0.075);
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  --radius: 14px;
+  --chat-font-size: 14.6px;
+  --message-pad-y: 5px;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f2ee;
+  --bg-soft: #ece9e3;
+  --titlebar: #e9e6e0;
+  --rail: #e9e6e0;
+  --sidebar: #f7f5f1;
+  --chat: #fbfaf7;
+  --panel: #fbfaf7;
+  --panel-2: #ffffff;
+  --panel-3: #eeece6;
+  --card: #ffffff;
+  --input: #f7f5f1;
+  --line: rgba(18, 19, 24, 0.075);
+  --line-strong: rgba(18, 19, 24, 0.145);
+  --text: #15161b;
+  --text-dim: #4d5260;
+  --muted: #767b89;
+  --accent: #d94040;
+  --accent-rgb: 217, 64, 64;
+  --brand: #e22f2f;
+  --accent-dim: rgba(217, 64, 64, 0.1);
+  --green: #179b74;
+  --yellow: #b87912;
+  --hover: rgba(18, 19, 24, 0.045);
+  --active: rgba(18, 19, 24, 0.075);
+  --shadow: 0 24px 70px rgba(40, 35, 25, 0.14);
+  color-scheme: light;
+}
+
+:root[data-density="compact"] {
+  --message-pad-y: 1px;
+}
+
+:root[data-text-size="small"] {
+  --chat-font-size: 13.4px;
+}
+
+:root[data-text-size="large"] {
+  --chat-font-size: 15.8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Manrope", "Segoe UI Variable Text", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Satoshi", "Manrope", "Segoe UI", system-ui, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(var(--accent-rgb), 0.32);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+  background-clip: content-box;
+}
+
+:root[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(18, 19, 24, 0.16);
+  background-clip: content-box;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  flex: none;
+}
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.icon-btn.active {
+  background: var(--active);
+  color: var(--text);
+}
+
+.kbd {
+  font-family: "Cascadia Code", "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 5px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--input);
+}
+
+.spin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
