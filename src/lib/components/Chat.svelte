@@ -7,6 +7,7 @@
   import type { Active, Attachment, Channel, Embed, Message, Role, User } from "../types";
   import { activeKey } from "../types";
   import { hasPermission } from "../permissions";
+  import { openImage } from "../image-viewer";
   import { openProfile } from "../profile";
   import { showUserMenu } from "../user-menu";
   import { openContextMenu, type ContextMenuItem } from "../context-menu";
@@ -796,9 +797,16 @@
     }
   }
 
+  function isImageAttachment(attachment: Attachment): boolean {
+    if (attachment.content_type?.startsWith("image/")) return true;
+    return /\.(png|jpe?g|gif|webp|avif|svg)(\?|$)/i.test(
+      attachment.file_name ?? attachment.url ?? "",
+    );
+  }
+
   function isImage(message: Message): boolean {
     return message.attachments?.some(
-      (attachment) => attachment.content_type?.startsWith("image/") && attachment.url,
+      (attachment) => isImageAttachment(attachment) && Boolean(attachment.url),
     ) ?? false;
   }
 
@@ -1101,12 +1109,16 @@
               {#if message.attachments && message.attachments.length > 0}
                 <div class="attachments">
                   {#each message.attachments as attachment}
-                    {#if attachment.content_type?.startsWith("image/")}
+                    {#if isImageAttachment(attachment)}
                       {#if attachment.url}
                         <button
                           class="attachment image"
-                          title={attachment.file_name ?? "Open image"}
-                          on:click={() => api.openExternal(attachment.url)}
+                          title={attachment.file_name ?? "View image"}
+                          on:click={() =>
+                            openImage(
+                              attachment.url,
+                              attachment.file_name ?? "Image",
+                            )}
                         >
                           <img
                             src={attachment.url}
@@ -1190,7 +1202,15 @@
                           onLoaded={onMediaLoad}
                         />
                       {:else if embedImage(embed)}
-                        <button class="embed-image" on:click={() => { const image = embedImage(embed); if (image) void api.openExternal(image); }}>
+                        <button
+                          class="embed-image"
+                          title="View image"
+                          on:click={() =>
+                            openImage(
+                              embedImage(embed),
+                              embedTitle(embed) || "Embed image",
+                            )}
+                        >
                           <img src={embedImage(embed) ?? ""} alt="" loading="lazy" on:load={onMediaLoad} />
                         </button>
                       {/if}

@@ -6,7 +6,7 @@
   import { openProfile } from "../../profile";
   import { showUserMenu } from "../../user-menu";
   import type { Member, Role, Server } from "../../types";
-  import { me, notify, serverPermissions, setMemberRoles as applyMemberRoles } from "../../workspace";
+  import { me, memberRoleUpdate, notify, serverPermissions, setMemberRoles as applyMemberRoles } from "../../workspace";
   import Avatar from "../Avatar.svelte";
   import Emoji from "../Emoji.svelte";
   import EmojiText from "../EmojiText.svelte";
@@ -21,6 +21,7 @@
   let error = "";
   let busy: string | null = null;
   let lastServerId = "";
+  let lastRoleUpdate = 0;
 
   $: canManageRoles =
     $serverPermissions !== null && hasPermission($serverPermissions, "ManageRoles");
@@ -41,6 +42,20 @@
     .filter((role) => !role.is_everyone)
     .sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
 
+  $: if (
+    $memberRoleUpdate &&
+    $memberRoleUpdate.serverId === server.id &&
+    $memberRoleUpdate.at !== lastRoleUpdate
+  ) {
+    lastRoleUpdate = $memberRoleUpdate.at;
+    const update = $memberRoleUpdate;
+    members = members.map((entry) =>
+      entry.user.id === update.member.user.id
+        ? mergeMember(entry, update.member)
+        : entry,
+    );
+  }
+
   $: if (server.id !== lastServerId) {
     lastServerId = server.id;
     void load();
@@ -56,6 +71,7 @@
       ]);
       members = memberList;
       roles = roleResponse.roles ?? [];
+      lastRoleUpdate = $memberRoleUpdate?.at ?? 0;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -86,7 +102,9 @@
     return {
       ...member,
       ...updated,
-      user: updated.user?.id ? { ...member.user, ...updated.user } : member.user,
+      user: updated.user?.username
+        ? { ...member.user, ...updated.user }
+        : member.user,
     };
   }
 

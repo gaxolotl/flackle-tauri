@@ -251,6 +251,58 @@ export interface MemberListSnapshot {
   roles: Role[];
 }
 
+export interface ProfileBlock {
+  id?: string;
+  type: string;
+  content?: string;
+  level?: number;
+  order?: number;
+  platform?: string;
+  username?: string;
+  url?: string;
+  image_url?: string;
+  [key: string]: unknown;
+}
+
+export interface UserCard {
+  user: User;
+  membership?: string | null;
+  badges?: unknown[];
+  socials?: ProfileBlock[];
+  blocks?: ProfileBlock[];
+  member?: Member | null;
+  [key: string]: unknown;
+}
+
+export interface BentoGame {
+  cover?: string;
+  gameId?: number;
+  title?: string;
+  summary?: string;
+  platforms?: string[];
+  releaseDate?: number;
+  [key: string]: unknown;
+}
+
+export interface BentoCard {
+  id?: string;
+  type: string;
+  row?: number;
+  col?: number;
+  width?: number;
+  height?: number;
+  data?: {
+    url?: string;
+    location?: string;
+    timezone?: string;
+    label?: string;
+    mode?: string;
+    games?: BentoGame[];
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 export interface AcceptInviteResult {
   server?: Server | null;
   landing_channel_id?: Snowflake | null;

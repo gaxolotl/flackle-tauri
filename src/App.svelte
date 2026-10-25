@@ -21,6 +21,8 @@
   import ContextMenu from "./lib/components/ContextMenu.svelte";
   import DialogHost from "./lib/components/DialogHost.svelte";
   import Friends from "./lib/components/Friends.svelte";
+  import FullProfile from "./lib/components/FullProfile.svelte";
+  import ImageViewer from "./lib/components/ImageViewer.svelte";
   import ProfileCard from "./lib/components/ProfileCard.svelte";
   import ServerSettings from "./lib/components/ServerSettings.svelte";
   import ServerInfo from "./lib/components/ServerInfo.svelte";
@@ -93,7 +95,9 @@
   {:else if $me}
     <Shell />
     <ProfileCard />
+    <FullProfile />
     <ContextMenu />
+    <ImageViewer />
     <DialogHost />
     <ChannelDialog />
     {#if $modal === "settings"}

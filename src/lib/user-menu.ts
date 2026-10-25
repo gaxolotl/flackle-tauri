@@ -2,10 +2,11 @@ import { get } from "svelte/store";
 import * as api from "./api";
 import { openContextMenu, type ContextMenuItem } from "./context-menu";
 import { confirmAction } from "./dialog";
-import { closeProfile, openProfile } from "./profile";
+import { closeProfile, openFullProfile, openProfile } from "./profile";
 import type { Member, User } from "./types";
 import {
   acceptFriendRequest,
+  active,
   blockUser,
   blockedUsers,
   cancelFriendRequest,
@@ -65,7 +66,14 @@ export function showUserMenu(
     {
       label: "Open Full Profile",
       icon: "user",
-      run: () => void api.openExternal(profileUrl),
+      run: () => {
+        const current = get(active);
+        openFullProfile(
+          user,
+          member,
+          current?.kind === "guild" ? current.serverId : null,
+        );
+      },
     },
     {
       label: "Copy User URL",

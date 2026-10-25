@@ -860,10 +860,35 @@ async fn set_member_roles(
     user_id: String,
     add: Vec<String>,
     remove: Vec<String>,
-) -> Result<Member, String> {
+) -> Result<(), String> {
     state
         .client
         .set_member_roles(&server_id, &user_id, add, remove)
+        .await
+        .map_err(error_text)
+}
+
+#[tauri::command]
+async fn fetch_user_card(
+    state: tauri::State<'_, AppState>,
+    username: String,
+    server_id: Option<String>,
+) -> Result<Value, String> {
+    state
+        .client
+        .fetch_user_card(&username, server_id.as_deref())
+        .await
+        .map_err(error_text)
+}
+
+#[tauri::command]
+async fn fetch_user_bento(
+    state: tauri::State<'_, AppState>,
+    username: String,
+) -> Result<Value, String> {
+    state
+        .client
+        .fetch_user_bento(&username)
         .await
         .map_err(error_text)
 }
@@ -1317,6 +1342,8 @@ pub fn run() {
             fetch_members,
             fetch_member_snapshot,
             set_member_roles,
+            fetch_user_card,
+            fetch_user_bento,
             accept_invite,
             create_server,
             mark_server_read,

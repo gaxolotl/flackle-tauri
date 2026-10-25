@@ -354,7 +354,7 @@
         <span class="nav-icon"><Icon name="alert" size={15} /></span>
         {signingOut ? "Signing out…" : "Sign out"}
       </button>
-      <p class="nav-version">v0.1.0 · MIT</p>
+      <p class="nav-version">v1.0.0 · MIT</p>
     </aside>
 
     <section class="panel">
@@ -796,7 +796,7 @@
             <span class="about-mark"><Mark size={38} /></span>
             <div>
               <h3>Flackle Desktop</h3>
-              <span>Version 0.1.0 · “Ember”</span>
+              <span>Version 1.0.0 · “Ember”</span>
             </div>
           </div>
 
@@ -807,7 +807,7 @@
           </p>
 
           <div class="specs">
-            <div><span>Core</span><b>flackle-core 0.1.0</b></div>
+            <div><span>Core</span><b>flackle-core 1.0.0</b></div>
             <div><span>Shell</span><b>Tauri 2 · WebView2 / WebKitGTK / WKWebView</b></div>
             <div><span>Interface</span><b>Svelte 5 · TypeScript</b></div>
             <div><span>Protocol</span><b>REST + NDJSON gateway</b></div>

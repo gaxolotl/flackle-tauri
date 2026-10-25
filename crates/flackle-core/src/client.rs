@@ -805,13 +805,33 @@ impl Client {
         user_id: &str,
         add: Vec<String>,
         remove: Vec<String>,
-    ) -> Result<Member> {
-        self.inner
+    ) -> Result<()> {
+        let _: Value = self
+            .inner
             .rest
             .patch(
                 &format!("/api/servers/{server_id}/members/{user_id}/roles"),
                 json!({ "add": add, "remove": remove }),
             )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn fetch_user_card(&self, username: &str, server_id: Option<&str>) -> Result<Value> {
+        let mut query = Vec::new();
+        if let Some(server_id) = server_id {
+            query.push(("server_id", server_id.to_string()));
+        }
+        self.inner
+            .rest
+            .get(&format!("/api/users/{}/card", encode(username)), &query)
+            .await
+    }
+
+    pub async fn fetch_user_bento(&self, username: &str) -> Result<Value> {
+        self.inner
+            .rest
+            .get(&format!("/api/users/{}/bento", encode(username)), &[])
             .await
     }
 

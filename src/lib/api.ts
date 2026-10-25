@@ -3,6 +3,7 @@ import type {
   Attachment,
   AuthSession,
   BackupCodes,
+  BentoCard,
   Bootstrap,
   Channel,
   ChannelBundle,
@@ -40,6 +41,7 @@ import type {
   TwoFactorStatus,
   UnreadSummary,
   User,
+  UserCard,
 } from "./types";
 import { ALL_PERMISSIONS, Permission } from "./permissions";
 import { demoBootstrap, demoChannels, demoMemberSnapshot, demoMembers, demoMessages, demoRoles } from "./demo";
@@ -616,7 +618,7 @@ export async function setMemberRoles(
   userId: string,
   add: string[],
   remove: string[],
-): Promise<Member> {
+): Promise<void> {
   if (!inTauri) {
     await wait(200);
     const member = demoMembers.find((entry) => entry.user.id === userId) ?? demoMembers[0];
@@ -624,9 +626,83 @@ export async function setMemberRoles(
     add.forEach((id) => ids.add(id));
     remove.forEach((id) => ids.delete(id));
     member.role_ids = [...ids];
-    return { ...member };
+    return;
   }
   return call("set_member_roles", { serverId, userId, add, remove });
+}
+
+export async function fetchUserCard(
+  username: string,
+  serverId?: string | null,
+): Promise<UserCard> {
+  if (!inTauri) {
+    await wait(160);
+    const member = demoMembers.find((entry) => entry.user.username === username) ?? null;
+    const user = member?.user ?? demoBootstrap.me;
+    return {
+      user,
+      member,
+      membership: "free",
+      badges: [],
+      blocks: [
+        {
+          id: "demo-header",
+          type: "header",
+          content: "Building a quieter place to hang out.",
+          level: 2,
+          order: 0,
+        },
+        {
+          id: "demo-social",
+          type: "social",
+          content: "GitHub",
+          platform: "github",
+          username: user.username,
+          order: 1,
+        },
+        {
+          id: "demo-link",
+          type: "link",
+          content: "Flackle",
+          url: "https://flackle.com",
+          order: 2,
+        },
+      ],
+      socials: [],
+    };
+  }
+  return call("fetch_user_card", { username, serverId: serverId ?? null });
+}
+
+export async function fetchUserBento(username: string): Promise<BentoCard[]> {
+  if (!inTauri) {
+    await wait(160);
+    return [
+      {
+        id: "demo-time",
+        type: "time",
+        width: 4,
+        height: 2,
+        data: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+      },
+      {
+        id: "demo-weather",
+        type: "weather",
+        width: 6,
+        height: 2,
+        data: { location: "Sofia, Sofia-City, BG" },
+      },
+      {
+        id: "demo-image",
+        type: "image",
+        width: 6,
+        height: 3,
+        data: { url: "/brand/flackle-backdrop.svg" },
+      },
+    ];
+  }
+  const data = await call<{ cards?: BentoCard[] } | null>("fetch_user_bento", { username });
+  return data?.cards ?? [];
 }
 
 export async function fetchMemberSnapshot(

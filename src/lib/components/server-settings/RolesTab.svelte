@@ -638,12 +638,15 @@
   .tiny {
     width: 24px;
     height: 24px;
+    flex: none;
+    padding: 0;
     border: 1px solid var(--line);
     border-radius: 6px;
     background: var(--panel-2);
     color: var(--text-dim);
     display: grid;
     place-items: center;
+    line-height: 0;
   }
   .tiny:hover:not(:disabled) {
     color: var(--text);

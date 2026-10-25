@@ -400,7 +400,7 @@ export function demoMessages(target: Target, before?: string | null): MessagePag
         attachments: [
           {
             url: "",
-            file_name: "flackle-0.1.0-notes.md",
+            file_name: "flackle-1.0.0-notes.md",
             file_size: 8_420,
             content_type: "text/markdown",
           },

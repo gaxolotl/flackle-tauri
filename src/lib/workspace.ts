@@ -41,6 +41,12 @@ export const messages = writable<Message[]>([]);
 export const members = writable<Member[]>([]);
 export const memberSections = writable<MemberListSection[]>([]);
 export const memberTotal = writable(0);
+export const memberRoleUpdate = writable<{
+  serverId: string;
+  member: Member;
+  at: number;
+} | null>(null);
+let memberRoleUpdateSeq = 0;
 export const serverRoles = writable<Role[]>([]);
 export const serverPermissions = writable<string | null>(null);
 export const activePermissions = writable<string | null>(null);
@@ -629,14 +635,16 @@ function mergeMember(current: Member, updated: Member): Member {
   return {
     ...current,
     ...updated,
-    user: updated.user?.id ? { ...current.user, ...updated.user } : current.user,
+    user: updated.user?.username
+      ? { ...current.user, ...updated.user }
+      : current.user,
   };
 }
 
 function syncMemberSections(list: Member[]) {
   const currentSections = get(memberSections);
   const roles = get(serverRoles);
-  if (currentSections.length === 0 || roles.length === 0) return;
+  if (roles.length === 0) return;
 
   const hoisted = roles
     .filter((role) => role.hoist && !role.is_everyone)
@@ -665,29 +673,80 @@ function syncMemberSections(list: Member[]) {
   memberSections.set([...roleSections, ...rest]);
 }
 
+function sortedRoleIds(ids: string[], roles: Role[]): string[] {
+  const positions = new Map(roles.map((role) => [role.id, role.position ?? 0]));
+  return [...new Set(ids)].sort(
+    (a, b) => (positions.get(b) ?? 0) - (positions.get(a) ?? 0),
+  );
+}
+
 export async function setMemberRoles(userId: string, add: string[], remove: string[]) {
   const current = get(active);
   if (current?.kind !== "guild") return null;
-  const updated = await api.setMemberRoles(current.serverId, userId, add, remove);
-  let nextMembers: Member[] = [];
-  members.update((list) => {
-    nextMembers = list.map((member) =>
-      member.user.id === userId ? mergeMember(member, updated) : member,
-    );
-    return nextMembers;
-  });
-  syncMemberSections(nextMembers);
 
-  const cached = memberCache.get(current.serverId);
-  if (cached) {
-    memberCache.set(
-      current.serverId,
-      cached.map((member) =>
-        member.user.id === userId ? mergeMember(member, updated) : member,
-      ),
-    );
+  const existing =
+    get(members).find((member) => member.user.id === userId) ??
+    memberCache.get(current.serverId)?.find((member) => member.user.id === userId) ??
+    null;
+  const previous = existing?.role_ids ?? existing?.roles ?? [];
+  const nextIds = sortedRoleIds(
+    [
+      ...previous.filter((id) => !remove.includes(id)),
+      ...add.filter((id) => !previous.includes(id)),
+    ],
+    get(serverRoles),
+  );
+  const optimistic: Member = existing
+    ? { ...existing, role_ids: nextIds, roles: nextIds }
+    : {
+        user: { id: userId, username: "" },
+        role_ids: nextIds,
+        roles: nextIds,
+      };
+
+  const apply = (member: Member) => {
+    let nextMembers: Member[] = get(members);
+    let changed = false;
+    members.update((list) => {
+      nextMembers = list.map((entry) => {
+        if (entry.user.id !== userId) return entry;
+        changed = true;
+        return mergeMember(entry, member);
+      });
+      return nextMembers;
+    });
+    if (changed) syncMemberSections(nextMembers);
+
+    const cached = memberCache.get(current.serverId);
+    if (cached?.some((entry) => entry.user.id === userId)) {
+      memberCache.set(
+        current.serverId,
+        cached.map((entry) =>
+          entry.user.id === userId ? mergeMember(entry, member) : entry,
+        ),
+      );
+    }
+  };
+
+  const publish = (member: Member) =>
+    memberRoleUpdate.set({
+      serverId: current.serverId,
+      member,
+      at: ++memberRoleUpdateSeq,
+    });
+
+  apply(optimistic);
+  publish(optimistic);
+  try {
+    await api.setMemberRoles(current.serverId, userId, add, remove);
+    return optimistic;
+  } catch (error) {
+    const rollback =
+      existing ?? { ...optimistic, role_ids: previous, roles: previous };
+    apply(rollback);
+    publish(rollback);
+    throw error;
   }
-  return updated;
 }
 
 export function clearMemberCache(serverId: string) {

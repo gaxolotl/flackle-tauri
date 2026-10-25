@@ -5,7 +5,9 @@
   import { openContextMenu } from "../context-menu";
   import { hasPermission } from "../permissions";
   import { prefs } from "../preferences";
-  import { closeProfile, profile } from "../profile";
+  import { closeProfile, openFullProfile, profile } from "../profile";
+  import { openImage } from "../image-viewer";
+  import type { Member } from "../types";
   import {
     active,
     me,
@@ -216,25 +218,66 @@
     rolePickerOpen = true;
   }
 
+  function mergeProfileMember(base: Member, updated: Member): Member {
+    return {
+      ...base,
+      ...updated,
+      user: updated.user?.username ? { ...base.user, ...updated.user } : base.user,
+      role_ids: updated.role_ids ?? base.role_ids,
+      roles: updated.roles ?? base.roles,
+    };
+  }
+
   function toggleRole(roleId: string) {
     if (assignedIds.has(roleId)) void removeRole(roleId);
     else void addRole(roleId);
   }
 
+  function optimisticRoleIds(base: string[], addId?: string, removeId?: string): string[] {
+    const ids = new Set(base);
+    if (addId) ids.add(addId);
+    if (removeId) ids.delete(removeId);
+    return [...ids];
+  }
+
   async function addRole(roleId: string) {
     if (!target?.member || assigningRole) return;
+    const userId = target.user.id;
+    const previousMember = target.member;
+    const previousIds = previousMember.role_ids ?? previousMember.roles ?? [];
+    const nextIds = optimisticRoleIds(previousIds, roleId);
+    profile.update((current) =>
+      current && current.user.id === userId
+        ? {
+            ...current,
+            member: {
+              ...(current.member ?? previousMember),
+              role_ids: nextIds,
+              roles: nextIds,
+            },
+          }
+        : current,
+    );
     assigningRole = true;
     try {
-      const updated = await setMemberRoles(target.user.id, [roleId], []);
+      const updated = await setMemberRoles(userId, [roleId], []);
       if (updated) {
         profile.update((current) =>
-          current
-            ? { ...current, member: { ...(current.member ?? target.member!), ...updated } }
+          current && current.user.id === userId
+            ? {
+                ...current,
+                member: mergeProfileMember(current.member ?? previousMember, updated),
+              }
             : current,
         );
       }
       notify("Role added.");
     } catch (error) {
+      profile.update((current) =>
+        current && current.user.id === userId
+          ? { ...current, member: previousMember }
+          : current,
+      );
       notify(error instanceof Error ? error.message : String(error));
     } finally {
       assigningRole = false;
@@ -243,22 +286,55 @@
 
   async function removeRole(roleId: string) {
     if (!target?.member || assigningRole) return;
+    const userId = target.user.id;
+    const previousMember = target.member;
+    const previousIds = previousMember.role_ids ?? previousMember.roles ?? [];
+    const nextIds = optimisticRoleIds(previousIds, undefined, roleId);
+    profile.update((current) =>
+      current && current.user.id === userId
+        ? {
+            ...current,
+            member: {
+              ...(current.member ?? previousMember),
+              role_ids: nextIds,
+              roles: nextIds,
+            },
+          }
+        : current,
+    );
     assigningRole = true;
     try {
-      const updated = await setMemberRoles(target.user.id, [], [roleId]);
+      const updated = await setMemberRoles(userId, [], [roleId]);
       if (updated) {
         profile.update((current) =>
-          current
-            ? { ...current, member: { ...(current.member ?? target.member!), ...updated } }
+          current && current.user.id === userId
+            ? {
+                ...current,
+                member: mergeProfileMember(current.member ?? previousMember, updated),
+              }
             : current,
         );
       }
       notify("Role removed.");
     } catch (error) {
+      profile.update((current) =>
+        current && current.user.id === userId
+          ? { ...current, member: previousMember }
+          : current,
+      );
       notify(error instanceof Error ? error.message : String(error));
     } finally {
       assigningRole = false;
     }
+  }
+
+  function viewFullProfile() {
+    if (!target) return;
+    openFullProfile(
+      target.user,
+      target.member,
+      $active?.kind === "guild" ? $active.serverId : null,
+    );
   }
 
   function showMore(event: MouseEvent) {
@@ -417,12 +493,24 @@
       {#if $prefs.viewIcons && (target.user.avatar_url || target.user.banner_url)}
         <div class="view-icons">
           {#if target.user.avatar_url}
-            <button on:click={() => api.openExternal(target.user.avatar_url!)}>
+            <button
+              on:click={() =>
+                openImage(
+                  target.user.avatar_url,
+                  `${target.user.display_name || target.user.username}'s avatar`,
+                )}
+            >
               <Icon name="image" size={13} /> View avatar
             </button>
           {/if}
           {#if target.user.banner_url}
-            <button on:click={() => api.openExternal(target.user.banner_url!)}>
+            <button
+              on:click={() =>
+                openImage(
+                  target.user.banner_url,
+                  `${target.user.display_name || target.user.username}'s banner`,
+                )}
+            >
               <Icon name="image" size={13} /> View banner
             </button>
           {/if}
@@ -433,6 +521,10 @@
         <button on:click={copyId}>
           <Icon name="copy" size={14} />
           {copied ? "Copied" : "Copy ID"}
+        </button>
+        <button class:primary={!isSelf} on:click={viewFullProfile}>
+          <Icon name="user" size={14} />
+          Full profile
         </button>
         {#if isSelf}
           <button class="primary" on:click={editSelf}>
@@ -621,12 +713,15 @@
   .role-add {
     width: 20px;
     height: 20px;
+    flex: none;
+    padding: 0;
     border: 1px solid var(--line);
     border-radius: 5px;
     background: var(--panel-2);
     color: var(--muted);
     display: grid;
     place-items: center;
+    line-height: 0;
   }
   .role-add:hover {
     background: var(--hover);

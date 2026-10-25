@@ -9,7 +9,14 @@ export interface ProfileTarget {
   y: number;
 }
 
+export interface FullProfileTarget {
+  user: User;
+  member?: Member | null;
+  serverId?: string | null;
+}
+
 export const profile = writable<ProfileTarget | null>(null);
+export const fullProfile = writable<FullProfileTarget | null>(null);
 
 export function openProfile(
   user: User,
@@ -28,4 +35,17 @@ export function openProfile(
 
 export function closeProfile() {
   profile.set(null);
+}
+
+export function openFullProfile(
+  user: User,
+  member?: Member | null,
+  serverId?: string | null,
+) {
+  profile.set(null);
+  fullProfile.set({ user, member: member ?? null, serverId: serverId ?? null });
+}
+
+export function closeFullProfile() {
+  fullProfile.set(null);
 }

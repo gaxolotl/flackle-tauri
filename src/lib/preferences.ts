@@ -189,7 +189,7 @@ export const enhancementDefinitions: EnhancementDefinition[] = [
   {
     key: "viewIcons",
     label: "View icons",
-    description: "Add buttons to open a profile's avatar and banner at full size.",
+    description: "Add buttons to view a profile's avatar and banner in the app.",
   },
 ];
 
