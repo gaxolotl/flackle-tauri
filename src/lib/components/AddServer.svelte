@@ -49,11 +49,14 @@
 
   async function openServer(server: Server, preferredChannel?: string | null) {
     const bundle = await ensureChannels(server.id);
+    const sorted = (type: string) =>
+      bundle.channels
+        .filter((channel) => channel.type === type)
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     const channelId =
       preferredChannel ??
-      bundle.channels
-        .filter((channel) => channel.type === "text")
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0]?.id;
+      sorted("text")[0]?.id ??
+      sorted("stats")[0]?.id;
     if (channelId) await openGuild(server, channelId);
   }
 

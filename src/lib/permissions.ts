@@ -25,6 +25,8 @@ export const Permission = {
   DeafenMembers: 1n << 20n,
   UseVideo: 1n << 21n,
   ManageMembers: 1n << 22n,
+  ViewGeneralStats: 1n << 24n,
+  ViewElevatedStats: 1n << 25n,
   BypassSlowmode: 1n << 26n,
   TimeoutMembers: 1n << 27n,
   BulkDelete: 1n << 28n,

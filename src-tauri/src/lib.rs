@@ -173,6 +173,56 @@ async fn fetch_channels(
 }
 
 #[tauri::command]
+async fn fetch_channel_kinds(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    state
+        .client
+        .fetch_channel_kinds()
+        .await
+        .map_err(error_text)
+}
+
+#[tauri::command]
+async fn fetch_channel_analytics_bundle(
+    state: tauri::State<'_, AppState>,
+    server_id: String,
+    channel_id: String,
+) -> Result<Value, String> {
+    state
+        .client
+        .fetch_channel_analytics_bundle(&server_id, &channel_id)
+        .await
+        .map_err(error_text)
+}
+
+#[tauri::command]
+async fn fetch_channel_activity_calendar(
+    state: tauri::State<'_, AppState>,
+    server_id: String,
+    channel_id: String,
+    year: u32,
+) -> Result<Value, String> {
+    state
+        .client
+        .fetch_channel_activity_calendar(&server_id, &channel_id, year)
+        .await
+        .map_err(error_text)
+}
+
+#[tauri::command]
+async fn fetch_channel_message_punchcard(
+    state: tauri::State<'_, AppState>,
+    server_id: String,
+    channel_id: String,
+    days: u32,
+) -> Result<Value, String> {
+    state
+        .client
+        .fetch_channel_message_punchcard(&server_id, &channel_id, days)
+        .await
+        .map_err(error_text)
+}
+
+#[tauri::command]
 async fn fetch_conversations(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<Conversation>, String> {
@@ -1212,6 +1262,10 @@ pub fn run() {
             fetch_servers,
             fetch_server,
             fetch_channels,
+            fetch_channel_kinds,
+            fetch_channel_analytics_bundle,
+            fetch_channel_activity_calendar,
+            fetch_channel_message_punchcard,
             fetch_conversations,
             fetch_friends,
             fetch_blocked,

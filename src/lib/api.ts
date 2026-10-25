@@ -13,6 +13,9 @@ import type {
   Member,
   MemberListSnapshot,
   AcceptInviteResult,
+  ActivityCalendar,
+  ActivityPunchcard,
+  AnalyticsBundle,
   AuditLogPage,
   CreateServerResult,
   FriendRequests,
@@ -109,6 +112,42 @@ export async function fetchChannels(serverId: string): Promise<ChannelBundle> {
     return demoChannels(serverId);
   }
   return call("fetch_channels", { serverId });
+}
+
+export async function fetchChannelKinds(): Promise<string[]> {
+  if (!inTauri) return ["text", "voice", "stats"];
+  return call("fetch_channel_kinds");
+}
+
+export async function fetchChannelAnalytics(
+  serverId: string,
+  channelId: string,
+): Promise<AnalyticsBundle> {
+  if (!inTauri) {
+    return {
+      live: { member_count: 0, presence_count: 0, voice_count: 0 },
+      scopes: {},
+    };
+  }
+  return call("fetch_channel_analytics_bundle", { serverId, channelId });
+}
+
+export async function fetchChannelActivityCalendar(
+  serverId: string,
+  channelId: string,
+  year: number,
+): Promise<ActivityCalendar> {
+  if (!inTauri) return { year, days: [] };
+  return call("fetch_channel_activity_calendar", { serverId, channelId, year });
+}
+
+export async function fetchChannelMessagePunchcard(
+  serverId: string,
+  channelId: string,
+  days: number,
+): Promise<ActivityPunchcard> {
+  if (!inTauri) return { days, cells: [] };
+  return call("fetch_channel_message_punchcard", { serverId, channelId, days });
 }
 
 export async function fetchConversations(): Promise<Conversation[]> {

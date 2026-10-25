@@ -326,11 +326,13 @@ export async function openGuild(server: Server, channelId: string) {
   const channel = bundle.channels.find((item) => item.id === channelId);
   if (!channel) return;
 
+  const isStats = channel.type === "stats";
   const next: ActiveChannel = {
     kind: "guild",
     serverId: server.id,
     serverName: server.name,
     channelId,
+    channelType: channel.type,
     title: channel.name,
     topic: channel.topic,
     icon: channel.icon,
@@ -343,13 +345,14 @@ export async function openGuild(server: Server, channelId: string) {
   typing.set({});
   newMessagesMarker.set(null);
   hasMore.set(false);
+  loadingMessages.set(false);
   serverRoles.set([]);
   serverPermissions.set(null);
   activePermissions.set(bundle.permissions?.[channelId] ?? null);
   const unreadBefore = get(unreadCounts)[`${server.id}:${channelId}`] ?? 0;
   clearUnread(server.id, channelId);
   await Promise.all([
-    loadMessagesFor(next, unreadBefore),
+    isStats ? Promise.resolve() : loadMessagesFor(next, unreadBefore),
     loadMemberSnapshot(server.id, channelId),
     loadRoles(server.id),
     loadServerPermissions(server.id),
@@ -530,11 +533,18 @@ export async function reloadChannels(server: Server): Promise<ChannelBundle> {
   if (current?.kind === "guild" && current.serverId === server.id) {
     const channel = bundle.channels.find((item) => item.id === current.channelId);
     if (channel) {
-      active.set({ ...current, title: channel.name, topic: channel.topic });
+      active.set({
+        ...current,
+        channelType: channel.type,
+        title: channel.name,
+        topic: channel.topic,
+        icon: channel.icon,
+        icon_color: channel.icon_color,
+      });
       channels.set(bundle);
     } else {
       const first = bundle.channels
-        .filter((item) => item.type === "text")
+        .filter((item) => item.type === "text" || item.type === "stats")
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0];
       if (first) await openGuild(server, first.id);
       else {

@@ -66,6 +66,21 @@
         { key: "MoveMembers", label: "Move Members" },
       ],
     },
+    {
+      name: "Custom channels",
+      items: [
+        {
+          key: "ViewGeneralStats",
+          label: "View General Stats",
+          hint: "Member counts, online members, voice activity, and activity trends.",
+        },
+        {
+          key: "ViewElevatedStats",
+          label: "View Elevated Stats",
+          hint: "Daily, weekly, and monthly active-member counts and trends.",
+        },
+      ],
+    },
   ];
 
   let roles: Role[] = [];

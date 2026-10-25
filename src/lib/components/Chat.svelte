@@ -49,7 +49,9 @@
   import EmojiPicker from "./EmojiPicker.svelte";
   import EmojiText from "./EmojiText.svelte";
   import Icon from "./Icon.svelte";
+  import StatsChannel from "./StatsChannel.svelte";
   import VideoPlayer from "./VideoPlayer.svelte";
+  import { statsElevatedVisible } from "../stats";
 
   let scroller: HTMLDivElement;
   let composer: HTMLTextAreaElement;
@@ -132,8 +134,15 @@
           ? `${typingEntries[0].name} and ${typingEntries[1].name} are typing…`
           : "Several people are typing…";
   $: channelTitle = $active?.title ?? "Conversation";
+  $: isStats =
+    $active?.kind === "guild" && $active.channelType === "stats";
   $: activeTopic =
-    $active?.kind === "guild" ? $active.topic || $active.serverName : "";
+    $active?.kind === "guild" && !isStats
+      ? $active.topic || $active.serverName
+      : "";
+  $: canViewElevatedStats =
+    $activePermissions !== null &&
+    hasPermission($activePermissions, "ViewElevatedStats");
   $: canSendMessages =
     $active?.kind === "dm" ||
     $activePermissions === null ||
@@ -325,7 +334,12 @@
           id: `channel:${channel.id}`,
           kind: "channel" as const,
           label: channel.name,
-          detail: channel.type === "voice" ? "Voice channel" : "Text channel",
+          detail:
+            channel.type === "voice"
+              ? "Voice channel"
+              : channel.type === "stats"
+                ? "Stats channel"
+                : "Text channel",
           insert: `<#${channel.id}>`,
           channel,
         }));
@@ -897,7 +911,7 @@
             name={$active.icon}
             color={$active.icon_color}
             size={19}
-            fallback="hash"
+            fallback={isStats ? "chart" : "hash"}
           />
         {:else}
           <Icon name="dm" size={19} />
@@ -909,6 +923,18 @@
       </div>
     </div>
     <div class="head-actions">
+      {#if isStats && canViewElevatedStats}
+        <button
+          class="icon-btn"
+          class:active={$statsElevatedVisible}
+          aria-label={$statsElevatedVisible ? "Hide elevated stats" : "Show elevated stats"}
+          title={$statsElevatedVisible ? "Hide elevated stats" : "Show elevated stats"}
+          aria-pressed={$statsElevatedVisible}
+          on:click={() => statsElevatedVisible.update((value) => !value)}
+        >
+          <Icon name="chart" size={18} />
+        </button>
+      {/if}
       {#if $active?.kind === "guild"}
         <button
           class="icon-btn"
@@ -923,6 +949,13 @@
     </div>
   </header>
 
+  {#if isStats && $active?.kind === "guild"}
+    <StatsChannel
+      serverId={$active.serverId}
+      channelId={$active.channelId}
+      permissionBits={$activePermissions}
+    />
+  {:else}
   <div class="messages" bind:this={scroller} on:scroll={onScroll}>
     <div class="messages-inner" class:empty={$messages.length === 0}>
       {#if $loadingMessages && $messages.length === 0}
@@ -1285,7 +1318,7 @@
             {#if suggestion.kind === "user"}
               <Avatar user={suggestion.user ?? null} size={22} status={false} />
             {:else if suggestion.kind === "channel" && suggestion.channel}
-              <span class="sug-icon"><ChannelIcon name={suggestion.channel.icon} color={suggestion.channel.icon_color} size={14} fallback={suggestion.channel.type === "voice" ? "speaker" : "hash"} /></span>
+              <span class="sug-icon"><ChannelIcon name={suggestion.channel.icon} color={suggestion.channel.icon_color} size={14} fallback={suggestion.channel.type === "voice" ? "speaker" : suggestion.channel.type === "stats" ? "chart" : "hash"} /></span>
             {:else if suggestion.kind === "role" && suggestion.role}
               <span
                 class="sug-role"
@@ -1400,6 +1433,7 @@
     {/if}
     </div>
   </div>
+  {/if}
 </section>
 
 {#if picker}

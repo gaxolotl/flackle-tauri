@@ -41,7 +41,8 @@
   ).length;
   $: total = $memberTotal || $members.length;
   $: channelCount = ($channels?.channels ?? []).filter(
-    (channel) => channel.type === "text" || channel.type === "voice",
+    (channel) =>
+      channel.type === "text" || channel.type === "voice" || channel.type === "stats",
   ).length;
   $: roleCount = $serverRoles.filter((role) => !role.is_everyone).length;
   $: friendIds = new Set(friends.map((user) => user.id));

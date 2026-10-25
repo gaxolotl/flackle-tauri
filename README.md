@@ -18,14 +18,17 @@ not bundle Node, Bun, or a second Chromium runtime.
 
 - Native-feeling desktop shell with a custom title bar, system tray, close-to-tray behavior,
   and native notifications.
-- Servers, categories, text channels, voice-channel metadata, direct messages, group
-  conversations, members, roles, invites, bans, and audit logs.
+- Servers, categories, text channels, voice-channel metadata, stats channels, direct messages,
+  group conversations, members, roles, invites, bans, and audit logs.
 - Message history, pagination, editing, deletion, replies, reactions, attachments, previews,
   role mentions, typing indicators, unread state, pings, and live gateway updates.
 - Friends and direct messaging with incoming/outgoing requests, blocking, and user context
   menus.
 - Profile cards, roles, permission-aware controls, moderation actions, and server/channel
   management.
+- Stats channels with live member, online, and voice counts, activity and active-user charts,
+  a yearly activity calendar, an hourly message heatmap, and Flackle's general/elevated stats
+  permissions.
 - TOTP two-factor authentication, backup codes, active-session management, security events,
   and session revocation.
 - Bundled Twemoji rendering, searchable emoji picker, customizable keybinds, density, text

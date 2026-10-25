@@ -188,10 +188,10 @@
     try {
       const bundle = await ensureChannels(server.id);
       const first = bundle.channels
-        .filter((channel) => channel.type === "text")
+        .filter((channel) => channel.type === "text" || channel.type === "stats")
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0];
       if (first) await openGuild(server, first.id);
-      else notify("This server has no text channels yet.");
+      else notify("This server has no text or stats channels yet.");
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error));
     }
@@ -439,12 +439,12 @@
       });
     }
     for (const channel of $channels?.channels ?? []) {
-      if (channel.type !== "text") continue;
+      if (channel.type !== "text" && channel.type !== "stats") continue;
       items.push({
         key: `channel:${channel.id}`,
-        label: `# ${channel.name}`,
+        label: channel.type === "stats" ? channel.name : `# ${channel.name}`,
         hint: currentServer?.name ?? "Channel",
-        icon: "hash",
+        icon: channel.type === "stats" ? "chart" : "hash",
         run: () => {
           if (currentServer) void openGuild(currentServer, channel.id);
         },
@@ -947,7 +947,11 @@
                   name={channel.icon}
                   color={channel.icon_color}
                   size={15}
-                  fallback={channel.type === "voice" ? "speaker" : "hash"}
+                  fallback={channel.type === "voice"
+                    ? "speaker"
+                    : channel.type === "stats"
+                      ? "chart"
+                      : "hash"}
                 />
                 {#if unreadCount > 0}
                   <span class="unread-dot" aria-hidden="true"></span>

@@ -5,12 +5,45 @@
   import { channels, moveChannelToCategory, notify, openGuild, reloadChannels, servers } from "../workspace";
   import Icon from "./Icon.svelte";
 
+  type ChannelKind = {
+    type: string;
+    label: string;
+    description: string;
+    icon: string;
+  };
+
+  const channelKinds: Record<string, ChannelKind> = {
+    text: {
+      type: "text",
+      label: "Text",
+      description: "Messages, files, and reactions",
+      icon: "hash",
+    },
+    voice: {
+      type: "voice",
+      label: "Voice",
+      description: "Voice rooms and streaming",
+      icon: "speaker",
+    },
+    stats: {
+      type: "stats",
+      label: "Stats",
+      description: "Live member, online, and voice activity for this server",
+      icon: "chart",
+    },
+  };
+
   let name = "";
   let topic = "";
   let type = "text";
   let categoryId = "";
   let saving = false;
   let nameInput: HTMLInputElement | undefined;
+  let creatable = ["text", "voice", "stats"];
+
+  $: typeChoices = creatable
+    .map((kind) => channelKinds[kind])
+    .filter((kind): kind is ChannelKind => !!kind);
 
   $: request = $channelDialog;
   $: categories = [...($channels?.categories ?? [])].sort(
@@ -47,6 +80,18 @@
       if (event.key === "Escape" && $channelDialog) closeChannelDialog();
     };
     window.addEventListener("keydown", onKey);
+    void api
+      .fetchChannelKinds()
+      .then((kinds) => {
+        const known = kinds.filter((kind) => !!channelKinds[kind]);
+        if (known.length > 0) {
+          creatable = known;
+          if (!known.includes(type)) type = known[0];
+        }
+      })
+      .catch(() => {
+        // Keep the built-in kinds when the endpoint is unavailable.
+      });
     return () => window.removeEventListener("keydown", onKey);
   });
 
@@ -84,7 +129,10 @@
         });
         const bundle = await reloadChannels(server);
         notify("Channel created.");
-        if (created.type === "text" && bundle.channels.some((item) => item.id === created.id)) {
+        if (
+          (created.type === "text" || created.type === "stats") &&
+          bundle.channels.some((item) => item.id === created.id)
+        ) {
           await openGuild(server, created.id);
         }
       } else if (request.mode === "channel-edit" && request.channel) {
@@ -140,26 +188,18 @@
           <label class="field">
             <span>Channel type</span>
             <div class="type-row">
-              <button
-                type="button"
-                class="type-choice"
-                class:active={type === "text"}
-                on:click={() => (type = "text")}
-              >
-                <Icon name="hash" size={16} />
-                <b>Text</b>
-                <small>Messages, files, and reactions</small>
-              </button>
-              <button
-                type="button"
-                class="type-choice"
-                class:active={type === "voice"}
-                on:click={() => (type = "voice")}
-              >
-                <Icon name="speaker" size={16} />
-                <b>Voice</b>
-                <small>Voice rooms and streaming</small>
-              </button>
+              {#each typeChoices as choice (choice.type)}
+                <button
+                  type="button"
+                  class="type-choice"
+                  class:active={type === choice.type}
+                  on:click={() => (type = choice.type)}
+                >
+                  <Icon name={choice.icon} size={16} />
+                  <b>{choice.label}</b>
+                  <small>{choice.description}</small>
+                </button>
+              {/each}
             </div>
           </label>
         {/if}
@@ -175,7 +215,7 @@
             </select>
           </label>
 
-          {#if editing || type === "text"}
+          {#if type === "text"}
             <label class="field">
               <span>Topic</span>
               <textarea
@@ -299,7 +339,7 @@
   }
   .type-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 7px;
   }
   .type-choice {

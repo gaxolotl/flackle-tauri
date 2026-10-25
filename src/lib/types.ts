@@ -146,6 +146,54 @@ export interface ChannelBundle {
   permissions: Record<string, string>;
 }
 
+export interface AnalyticsPoint {
+  at: string;
+  member_count: number;
+  presence_count: number;
+  voice_peak: number;
+  interpolated?: boolean;
+}
+
+export interface AnalyticsScope {
+  bucket_seconds: number;
+  series: AnalyticsPoint[];
+}
+
+export interface ActiveUsersPoint {
+  at: string;
+  dau: number;
+  wau: number;
+  mau: number;
+}
+
+export interface ActiveUsersScope {
+  bucket_days: number;
+  series: ActiveUsersPoint[];
+}
+
+export interface AnalyticsBundle {
+  live: {
+    member_count: number;
+    presence_count: number;
+    voice_count: number;
+  };
+  scopes: Record<string, AnalyticsScope>;
+  active_users?: {
+    live?: { dau: number; wau: number; mau: number };
+    scopes?: Record<string, ActiveUsersScope>;
+  };
+}
+
+export interface ActivityCalendar {
+  year: number;
+  days: Array<{ date: string; count: number }>;
+}
+
+export interface ActivityPunchcard {
+  days: number;
+  cells: Array<{ date: string; hour: number; count: number }>;
+}
+
 export interface ConversationMember {
   user: User;
   role?: string | null;
@@ -531,6 +579,7 @@ export interface ActiveChannel {
   serverId: string;
   serverName: string;
   channelId: string;
+  channelType?: string;
   title: string;
   topic?: string | null;
   icon?: string | null;

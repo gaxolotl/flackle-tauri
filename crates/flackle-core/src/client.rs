@@ -281,6 +281,69 @@ impl Client {
             .await
     }
 
+    pub async fn fetch_channel_kinds(&self) -> Result<Vec<String>> {
+        let data: Value = self
+            .inner
+            .rest
+            .get("/api/channel-kinds/creatable", &[])
+            .await?;
+        Ok(data
+            .get("types")
+            .and_then(Value::as_array)
+            .map(|types| {
+                types
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    pub async fn fetch_channel_analytics_bundle(
+        &self,
+        server_id: &str,
+        channel_id: &str,
+    ) -> Result<Value> {
+        self.inner
+            .rest
+            .get(
+                &format!("/api/servers/{server_id}/channels/{channel_id}/analytics/bundle"),
+                &[],
+            )
+            .await
+    }
+
+    pub async fn fetch_channel_activity_calendar(
+        &self,
+        server_id: &str,
+        channel_id: &str,
+        year: u32,
+    ) -> Result<Value> {
+        self.inner
+            .rest
+            .get(
+                &format!("/api/servers/{server_id}/channels/{channel_id}/analytics/calendar"),
+                &[("year", year.to_string())],
+            )
+            .await
+    }
+
+    pub async fn fetch_channel_message_punchcard(
+        &self,
+        server_id: &str,
+        channel_id: &str,
+        days: u32,
+    ) -> Result<Value> {
+        self.inner
+            .rest
+            .get(
+                &format!("/api/servers/{server_id}/channels/{channel_id}/analytics/punchcard"),
+                &[("days", days.to_string())],
+            )
+            .await
+    }
+
     pub async fn fetch_conversations(&self) -> Result<Vec<Conversation>> {
         self.inner.rest.get("/api/conversations", &[]).await
     }
