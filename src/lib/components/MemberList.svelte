@@ -1,6 +1,7 @@
 <script lang="ts">
   import { openProfile } from "../profile";
   import { showUserMenu } from "../user-menu";
+  import { prefs } from "../preferences";
   import type { Member, Role } from "../types";
   import { memberSections, memberTotal, members, presenceStatuses, serverRoles, modal, notify } from "../workspace";
   import Avatar from "./Avatar.svelte";
@@ -113,6 +114,9 @@
           <Avatar user={{ ...member.user, status: statusOf(member) }} size={32} />
           <span class="member-name" style={roleFor(member)?.color ? `color:${roleFor(member)?.color}` : ""}>
             {memberName(member)}
+            {#if $prefs.showMeYourName && member.user.username !== memberName(member)}
+              <span class="user-tag">@{member.user.username}</span>
+            {/if}
           </span>
         </button>
       {/each}
@@ -141,6 +145,9 @@
                 style={roleFor(member)?.color ? `color:${roleFor(member)?.color}` : ""}
               >
                 {memberName(member)}
+                {#if $prefs.showMeYourName && member.user.username !== memberName(member)}
+                  <span class="user-tag">@{member.user.username}</span>
+                {/if}
                 {#if member.is_owner}<span class="owner" title="Server owner"><Icon name="crown" size={10} /></span>{/if}
               </span>
             </button>
@@ -156,6 +163,9 @@
             <Avatar user={{ ...member.user, status: statusOf(member) }} size={32} />
             <span class="member-name" style={roleFor(member)?.color ? `color:${roleFor(member)?.color}` : ""}>
               {memberName(member)}
+              {#if $prefs.showMeYourName && member.user.username !== memberName(member)}
+                <span class="user-tag">@{member.user.username}</span>
+              {/if}
               {#if member.is_owner}<span class="owner" title="Server owner"><Icon name="crown" size={10} /></span>{/if}
             </span>
           </button>
@@ -168,7 +178,12 @@
           <button class="member offline" title="Offline" on:click={(event) => open(event, member)}
           on:contextmenu|preventDefault={(event) => showMemberMenu(event, member)}>
             <Avatar user={{ ...member.user, status: "offline" }} size={32} />
-            <span class="member-name">{memberName(member)}</span>
+            <span class="member-name">
+              {memberName(member)}
+              {#if $prefs.showMeYourName && member.user.username !== memberName(member)}
+                <span class="user-tag">@{member.user.username}</span>
+              {/if}
+            </span>
           </button>
         {/each}
       {/if}
@@ -313,6 +328,13 @@
     display: flex;
     align-items: center;
     flex: none;
+  }
+  .user-tag {
+    font-size: 10px;
+    font-weight: 500;
+    color: #737a8b;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .empty {
     font-size: 11.5px;

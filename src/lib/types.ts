@@ -12,6 +12,10 @@ export interface User {
 export interface SelfUser extends User {
   email: string;
   is_admin: boolean;
+  typing_indicator_enabled?: boolean | null;
+  typing_indicator_text?: string | null;
+  typing_indicator_style?: string | null;
+  typing_indicator_emojis?: string[] | null;
 }
 
 export interface Attachment {
@@ -21,6 +25,38 @@ export interface Attachment {
   content_type?: string | null;
   width?: number | null;
   height?: number | null;
+  expires_at?: string | null;
+  saved?: boolean | null;
+}
+
+export interface EmbedField {
+  name?: string;
+  value?: string;
+  inline?: boolean;
+}
+
+export interface Embed {
+  url?: string;
+  title?: string;
+  description?: string;
+  type?: string;
+  color?: string | number;
+  site_name?: string;
+  siteName?: string;
+  provider_name?: string;
+  providerName?: string;
+  image_url?: string;
+  imageUrl?: string;
+  thumbnail_url?: string;
+  thumbnailUrl?: string;
+  video_url?: string;
+  videoUrl?: string;
+  video_hls_url?: string;
+  videoHlsUrl?: string;
+  favicon_url?: string;
+  faviconUrl?: string;
+  fields?: EmbedField[];
+  [key: string]: unknown;
 }
 
 export interface Reaction {
@@ -57,7 +93,7 @@ export interface Message {
   sender_avatar_url?: string | null;
   author?: User | null;
   attachments?: Attachment[];
-  embeds?: unknown[];
+  embeds?: Embed[];
   reply_to?: MessageReply | null;
   reactions?: Reaction[];
   mention_ids?: string[];
@@ -77,6 +113,8 @@ export interface Server {
   position?: number | null;
   approx_member_count?: number | null;
   approx_presence_count?: number | null;
+  flags?: string | null;
+  verified?: boolean | null;
   created_at?: string | null;
 }
 

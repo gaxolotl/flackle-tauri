@@ -3,6 +3,7 @@
   import * as api from "../api";
   import {
     accentOptions,
+    enhancementDefinitions,
     formatKeybind,
     keybindDefinitions,
     keybindFromEvent,
@@ -14,6 +15,7 @@
     setPreference,
     type AccentName,
     type Density,
+    type EnhancementKey,
     type KeybindAction,
     type SendKey,
     type TextSize,
@@ -27,7 +29,7 @@
   import Mark from "./Mark.svelte";
   import SecuritySettings from "./SecuritySettings.svelte";
 
-  type Tab = "account" | "security" | "appearance" | "notifications" | "behavior" | "about";
+  type Tab = "account" | "security" | "appearance" | "notifications" | "behavior" | "enhancements" | "about";
 
   const tabs: Array<{ id: Tab; label: string; icon: string; title: string; subtitle: string }> = [
     {
@@ -66,6 +68,13 @@
       subtitle: "How messages and timestamps behave.",
     },
     {
+      id: "enhancements",
+      label: "Enhancements",
+      icon: "sparkles",
+      title: "Enhancements",
+      subtitle: "Optional extras on top of the core Flackle experience.",
+    },
+    {
       id: "about",
       label: "About",
       icon: "command",
@@ -80,6 +89,7 @@
   let capturing: KeybindAction | null = null;
 
   $: currentTab = tabs.find((item) => item.id === tab) ?? tabs[0];
+  $: if ($me?.status && $me.status !== status) status = $me.status;
 
   onMount(() => {
     const capture = (event: KeyboardEvent) => {
@@ -138,7 +148,19 @@
 
   async function chooseStatus(next: string) {
     status = next;
-    await setMyStatus(next);
+    try {
+      await setMyStatus(next);
+    } catch {
+      status = $me?.status ?? "online";
+    }
+  }
+
+  function toggleEnhancement(key: EnhancementKey) {
+    setPreference(key, !$prefs[key]);
+  }
+
+  function toggleShareTyping() {
+    setPreference("shareTyping", !$prefs.shareTyping);
   }
 
   async function signOut() {
@@ -487,6 +509,19 @@
                 on:click={() => setPreference("showTyping", !$prefs.showTyping)}
               ><span></span></button>
             </div>
+            <div class="setting-row">
+              <div>
+                <b>Share typing indicator</b>
+                <p>Let other people see when you are typing. This uses your Flackle typing-indicator account setting.</p>
+              </div>
+              <button
+                class="toggle"
+                class:on={$prefs.shareTyping}
+                aria-pressed={$prefs.shareTyping}
+                aria-label="Share typing indicator"
+                on:click={toggleShareTyping}
+              ><span></span></button>
+            </div>
           </div>
 
           <div class="section-title">Keybinds</div>
@@ -526,6 +561,29 @@
             {/each}
           </div>
           <button class="reset" on:click={resetKeybinds}>Reset all keybinds</button>
+        {:else if tab === "enhancements"}
+          <div class="section-title first">Enhancements</div>
+          <p class="section-note">
+            Optional extras built on top of the core client. Each one is a real behavior
+            you can turn off; nothing here is decorative.
+          </p>
+          <div class="setting-rows">
+            {#each enhancementDefinitions as definition (definition.key)}
+              <div class="setting-row">
+                <div>
+                  <b>{definition.label}</b>
+                  <p>{definition.description}</p>
+                </div>
+                <button
+                  class="toggle"
+                  class:on={$prefs[definition.key]}
+                  aria-pressed={$prefs[definition.key]}
+                  aria-label={definition.label}
+                  on:click={() => toggleEnhancement(definition.key)}
+                ><span></span></button>
+              </div>
+            {/each}
+          </div>
         {:else}
           <div class="about-hero">
             <span class="about-mark"><Mark size={38} /></span>

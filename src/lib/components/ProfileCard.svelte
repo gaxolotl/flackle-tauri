@@ -4,6 +4,7 @@
   import { confirmAction, reportAction } from "../dialog";
   import { openContextMenu } from "../context-menu";
   import { hasPermission } from "../permissions";
+  import { prefs } from "../preferences";
   import { closeProfile, profile } from "../profile";
   import {
     active,
@@ -25,6 +26,8 @@
   const margin = 10;
   let copied = false;
   let rolePickerOpen = false;
+  let roleQuery = "";
+  let rolePickerPos = { left: 0, top: 0 };
   let assigningRole = false;
   let lastTargetId = "";
   let cardEl: HTMLDivElement | undefined;
@@ -50,12 +53,16 @@
     $serverPermissions !== null &&
     hasPermission($serverPermissions, "ManageRoles");
   $: assignedIds = new Set(target?.member?.role_ids ?? target?.member?.roles ?? []);
-  $: availableRoles = $serverRoles
-    .filter((role) => !role.is_everyone && !assignedIds.has(role.id))
+  $: assignableRoles = $serverRoles
+    .filter((role) => !role.is_everyone)
     .sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
+  $: filteredRoles = assignableRoles.filter((role) =>
+    role.name.toLowerCase().includes(roleQuery.trim().toLowerCase()),
+  );
   $: if (target?.user.id !== lastTargetId) {
     lastTargetId = target?.user.id ?? "";
     rolePickerOpen = false;
+    roleQuery = "";
     if (target) {
       anchorRect =
         target.anchor && target.anchor.isConnected
@@ -171,6 +178,34 @@
     modal.set("settings");
   }
 
+  function openRolePicker(event: MouseEvent) {
+    if (rolePickerOpen) {
+      rolePickerOpen = false;
+      return;
+    }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const pickerWidth = 236;
+    const pickerHeight = 252;
+    const left = clamp(
+      rect.right - pickerWidth,
+      margin,
+      Math.max(margin, window.innerWidth - pickerWidth - margin),
+    );
+    const below = rect.bottom + 6;
+    const top =
+      below + pickerHeight > window.innerHeight - margin
+        ? Math.max(margin, rect.top - pickerHeight - 6)
+        : below;
+    rolePickerPos = { left, top };
+    roleQuery = "";
+    rolePickerOpen = true;
+  }
+
+  function toggleRole(roleId: string) {
+    if (assignedIds.has(roleId)) void removeRole(roleId);
+    else void addRole(roleId);
+  }
+
   async function addRole(roleId: string) {
     if (!target?.member || assigningRole) return;
     assigningRole = true;
@@ -183,7 +218,6 @@
             : current,
         );
       }
-      rolePickerOpen = false;
       notify("Role added.");
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error));
@@ -324,27 +358,12 @@
               class="role-add"
               title="Add role"
               aria-label="Add role"
-              on:click={() => (rolePickerOpen = !rolePickerOpen)}
+              on:click={openRolePicker}
             >
               <Icon name="plus" size={12} />
             </button>
           {/if}
         </div>
-
-        {#if rolePickerOpen && canManageRoles}
-          <div class="role-picker">
-            {#if availableRoles.length > 0}
-              {#each availableRoles as role}
-                <button disabled={assigningRole} on:click={() => addRole(role.id)}>
-                  <span style={role.color ? `background:${role.color}` : ""}></span>
-                  {role.name}
-                </button>
-              {/each}
-            {:else}
-              <p>No roles left to add.</p>
-            {/if}
-          </div>
-        {/if}
 
         <div class="roles">
           {#each roles as role}
@@ -380,6 +399,21 @@
         <div><span>User ID</span><b class="mono">{target.user.id}</b></div>
       </div>
 
+      {#if $prefs.viewIcons && (target.user.avatar_url || target.user.banner_url)}
+        <div class="view-icons">
+          {#if target.user.avatar_url}
+            <button on:click={() => api.openExternal(target.user.avatar_url!)}>
+              <Icon name="image" size={13} /> View avatar
+            </button>
+          {/if}
+          {#if target.user.banner_url}
+            <button on:click={() => api.openExternal(target.user.banner_url!)}>
+              <Icon name="image" size={13} /> View banner
+            </button>
+          {/if}
+        </div>
+      {/if}
+
       <div class="actions">
         <button on:click={copyId}>
           <Icon name="copy" size={14} />
@@ -393,6 +427,46 @@
         {/if}
       </div>
     </div>
+
+    {#if rolePickerOpen && canManageRoles}
+      <button
+        class="role-picker-backdrop"
+        aria-label="Close role picker"
+        on:click|stopPropagation={() => (rolePickerOpen = false)}
+      ></button>
+      <div
+        class="role-picker"
+        role="dialog"
+        aria-label="Assign roles"
+        style={`left:${rolePickerPos.left}px; top:${rolePickerPos.top}px`}
+        on:click|stopPropagation
+      >
+        <div class="role-search">
+          <Icon name="search" size={13} />
+          <input bind:value={roleQuery} placeholder="Search roles" spellcheck="false" />
+        </div>
+        <div class="role-options">
+          {#each filteredRoles as role (role.id)}
+            <button
+              class:checked={assignedIds.has(role.id)}
+              disabled={assigningRole}
+              on:click={() => toggleRole(role.id)}
+            >
+              <span class="role-check">
+                {#if assignedIds.has(role.id)}<Icon name="check" size={10} />{/if}
+              </span>
+              <span
+                class="role-dot"
+                style={role.color ? `background:${role.color}` : ""}
+              ></span>
+              <EmojiText text={role.name} size={11.5} />
+            </button>
+          {:else}
+            <p>No roles found.</p>
+          {/each}
+        </div>
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -411,6 +485,7 @@
     box-shadow: var(--shadow);
     overflow: hidden;
     animation: pop 120ms ease-out;
+    z-index: 1;
   }
   @keyframes pop {
     from {
@@ -543,27 +618,60 @@
     color: var(--text);
   }
   .role-picker {
-    margin: 0 16px 7px;
-    max-height: 132px;
-    overflow-y: auto;
-    border: 1px solid var(--line);
-    border-radius: 8px;
+    position: fixed;
+    z-index: 160;
+    width: 236px;
+    padding: 5px;
+    border: 1px solid var(--line-strong);
+    border-radius: 9px;
     background: var(--panel-2);
-    padding: 3px;
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.46);
+  }
+  .role-picker-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 159;
+    border: 0;
+    background: transparent;
+  }
+  .role-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 29px;
+    padding: 0 7px;
+    margin-bottom: 4px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--input);
+    color: var(--muted);
+  }
+  .role-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 11px;
+  }
+  .role-options {
+    max-height: 198px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 1px;
   }
   .role-picker button {
-    height: 27px;
+    height: 30px;
     border: 0;
-    border-radius: 5px;
+    border-radius: 6px;
     background: transparent;
     color: var(--text-dim);
-    font-size: 10.5px;
+    font-size: 11px;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     padding: 0 7px;
     text-align: left;
   }
@@ -571,7 +679,26 @@
     background: var(--hover);
     color: var(--text);
   }
-  .role-picker button span {
+  .role-picker button:disabled {
+    opacity: 0.55;
+  }
+  .role-check {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: var(--input);
+    color: var(--text);
+  }
+  .role-picker button.checked .role-check {
+    background: rgba(var(--accent-rgb), 0.22);
+    border-color: rgba(var(--accent-rgb), 0.55);
+    color: #ff9a9a;
+  }
+  .role-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -579,8 +706,8 @@
     flex: none;
   }
   .role-picker p {
-    margin: 6px;
-    font-size: 10px;
+    margin: 7px;
+    font-size: 10.5px;
     color: var(--muted);
   }
   .roles {
@@ -658,6 +785,28 @@
     font-family: "Cascadia Code", "SF Mono", ui-monospace, monospace;
     font-size: 9px !important;
     color: var(--muted) !important;
+  }
+  .view-icons {
+    display: flex;
+    gap: 6px;
+    padding: 8px 16px 0;
+  }
+  .view-icons button {
+    flex: 1;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 10px;
+  }
+  .view-icons button:hover {
+    background: var(--hover);
+    color: var(--text);
   }
   .actions {
     display: flex;

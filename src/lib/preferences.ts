@@ -66,8 +66,132 @@ export interface Preferences {
   timeFormat: TimeFormat;
   sendKey: SendKey;
   showTyping: boolean;
+  shareTyping: boolean;
+  linkPreviews: boolean;
+  characterCounter: boolean;
+  mentionAvatars: boolean;
+  messageClickActions: boolean;
+  quickReactions: boolean;
+  hidePendingCount: boolean;
+  noTypingAnimation: boolean;
+  onePingPerDm: boolean;
+  pictureInPicture: boolean;
+  previewMessage: boolean;
+  quickDelete: boolean;
+  showMeYourName: boolean;
+  whoReacted: boolean;
+  keepCurrentChannel: boolean;
+  viewIcons: boolean;
+  showMediaExpiry: boolean;
   keybinds: Keybinds;
 }
+
+export type EnhancementKey =
+  | "linkPreviews"
+  | "characterCounter"
+  | "mentionAvatars"
+  | "messageClickActions"
+  | "quickReactions"
+  | "hidePendingCount"
+  | "noTypingAnimation"
+  | "onePingPerDm"
+  | "pictureInPicture"
+  | "previewMessage"
+  | "quickDelete"
+  | "showMeYourName"
+  | "whoReacted"
+  | "keepCurrentChannel"
+  | "viewIcons"
+  | "showMediaExpiry";
+
+export interface EnhancementDefinition {
+  key: EnhancementKey;
+  label: string;
+  description: string;
+}
+
+export const enhancementDefinitions: EnhancementDefinition[] = [
+  {
+    key: "linkPreviews",
+    label: "Link previews",
+    description: "Fetch and render rich previews for links in messages.",
+  },
+  {
+    key: "showMediaExpiry",
+    label: "Attachment expiry",
+    description: "Show when an uploaded attachment will expire, like Flackle does.",
+  },
+  {
+    key: "characterCounter",
+    label: "Character counter",
+    description: "Show the character count and the message limit under the composer.",
+  },
+  {
+    key: "mentionAvatars",
+    label: "Mention avatars",
+    description: "Show the avatar next to user mentions in messages.",
+  },
+  {
+    key: "messageClickActions",
+    label: "Message click actions",
+    description: "Double-click a message to reply to it.",
+  },
+  {
+    key: "quickReactions",
+    label: "Quick reactions",
+    description: "Add your recently used emoji to the message action bar.",
+  },
+  {
+    key: "hidePendingCount",
+    label: "Hide pending count",
+    description: "Hide the friend-request badge on the Direct Messages button.",
+  },
+  {
+    key: "noTypingAnimation",
+    label: "No typing animation",
+    description: "Stop the typing dots from bouncing.",
+  },
+  {
+    key: "onePingPerDm",
+    label: "One ping per DM",
+    description: "Only notify once per conversation until you read it.",
+  },
+  {
+    key: "pictureInPicture",
+    label: "Picture in picture",
+    description: "Add a picture-in-picture control to inline videos.",
+  },
+  {
+    key: "previewMessage",
+    label: "Preview message",
+    description: "Preview formatting, mentions, and emoji below the composer.",
+  },
+  {
+    key: "quickDelete",
+    label: "Quick delete",
+    description: "Delete your own messages immediately without a confirmation dialog.",
+  },
+  {
+    key: "showMeYourName",
+    label: "Show me your name",
+    description: "Show usernames next to display names in messages and the member list.",
+  },
+  {
+    key: "whoReacted",
+    label: "Who reacted",
+    description: "List the people behind each reaction in its tooltip.",
+  },
+  {
+    key: "keepCurrentChannel",
+    label: "Keep current channel",
+    description: "Reopen the channel or conversation you were viewing next launch.",
+  },
+  {
+    key: "viewIcons",
+    label: "View icons",
+    description: "Add buttons to open a profile's avatar and banner at full size.",
+  },
+];
 
 export const accentOptions: Array<{
   id: AccentName;
@@ -94,6 +218,23 @@ const defaults: Preferences = {
   timeFormat: "12h",
   sendKey: "enter",
   showTyping: true,
+  shareTyping: true,
+  linkPreviews: true,
+  characterCounter: true,
+  mentionAvatars: true,
+  messageClickActions: false,
+  quickReactions: true,
+  hidePendingCount: false,
+  noTypingAnimation: false,
+  onePingPerDm: false,
+  pictureInPicture: true,
+  previewMessage: false,
+  quickDelete: false,
+  showMeYourName: false,
+  whoReacted: true,
+  keepCurrentChannel: false,
+  viewIcons: true,
+  showMediaExpiry: true,
   keybinds: { ...defaultKeybinds },
 };
 

@@ -30,6 +30,9 @@ not bundle Node, Bun, or a second Chromium runtime.
   and session revocation.
 - Bundled Twemoji rendering, searchable emoji picker, customizable keybinds, density, text
   size, reduced motion, notification rules, and dark/light/system themes.
+- Optional enhancements with real behavior and a settings toggle: link previews, inline video
+  with picture-in-picture, live composer preview, character counter, mention avatars, quick
+  reactions, who-reacted tooltips, attachment expiry labels, and keep-current-channel.
 
 ## Why it is lighter
 

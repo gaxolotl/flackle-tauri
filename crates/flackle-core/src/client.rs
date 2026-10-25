@@ -1195,6 +1195,23 @@ impl Client {
         self.send_frame(json!({ "type": kind, "payload": payload }))
     }
 
+    pub async fn stop_typing(&self, target: &Target) -> Result<()> {
+        let (kind, payload) = match target {
+            Target::Guild {
+                server_id,
+                channel_id,
+            } => (
+                "channel_typing_stop",
+                json!({ "server_id": server_id, "channel_id": channel_id }),
+            ),
+            Target::Conversation { conversation_id } => (
+                "typing_stop",
+                json!({ "conversation_id": conversation_id }),
+            ),
+        };
+        self.send_frame(json!({ "type": kind, "payload": payload }))
+    }
+
     pub async fn mark_read(&self, target: &Target, message_id: &str) -> Result<()> {
         let (kind, payload) = match target {
             Target::Guild {
@@ -1260,6 +1277,55 @@ impl Client {
             .patch("/api/status", json!({ "status": status }))
             .await?;
         Ok(())
+    }
+
+    pub async fn fetch_status(&self) -> Result<String> {
+        let value: Value = self.inner.rest.get("/api/status", &[]).await?;
+        Ok(value
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("online")
+            .to_string())
+    }
+
+    pub async fn update_typing_indicator(
+        &self,
+        enabled: bool,
+        text: Option<&str>,
+        style: Option<&str>,
+    ) -> Result<()> {
+        let mut body = json!({ "enabled": enabled });
+        if enabled {
+            if let Some(text) = text {
+                body["text"] = json!(text);
+            }
+            if let Some(style) = style {
+                body["style"] = json!(style);
+            }
+        }
+        let _: Value = self
+            .inner
+            .rest
+            .patch("/api/users/typing-indicator", body)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn create_link_preview(&self, url: &str) -> Result<Value> {
+        self.inner
+            .rest
+            .get("/api/link-preview", &[("url", url.to_string())])
+            .await
+    }
+
+    pub async fn update_message_embeds(
+        &self,
+        target: &Target,
+        message_id: &str,
+        tokens: Vec<String>,
+    ) -> Result<Value> {
+        let path = format!("{}/{message_id}/embeds", target.message_path());
+        self.inner.rest.put(&path, json!({ "tokens": tokens })).await
     }
 
     pub async fn set_idle(&self, idle: bool) -> Result<()> {

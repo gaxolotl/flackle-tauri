@@ -3,7 +3,8 @@
   import * as api from "../api";
   import { formatDay, formatSize, formatTime, renderContent, sameDay } from "../format";
   import { prefs } from "../preferences";
-  import type { Message } from "../types";
+  import { getRecentEmoji, pushRecentEmoji, searchEmoji } from "../emoji";
+  import type { Active, Attachment, Channel, Embed, Message, User } from "../types";
   import { activeKey } from "../types";
   import { hasPermission } from "../permissions";
   import { openProfile } from "../profile";
@@ -25,6 +26,7 @@
     me,
     members,
     messages,
+    newMessagesMarker,
     notify,
     pendingAttachments,
     presenceStatuses,
@@ -34,6 +36,7 @@
     serverRoles,
     servers,
     showMembers,
+    stopTypingInChannel,
     toggleReaction,
     typeInChannel,
     typing,
@@ -61,9 +64,30 @@
   let dragOver = false;
   let highlightId: string | null = null;
   let forceScroll = false;
+  let typingStopTimer: ReturnType<typeof setTimeout> | undefined;
+  let previousActive: Active | null = null;
+
+  type Suggestion = {
+    id: string;
+    kind: "user" | "channel" | "emoji";
+    label: string;
+    detail: string;
+    insert: string;
+    user?: User | null;
+    channel?: Channel;
+    char?: string;
+  };
+  let suggestions: Suggestion[] = [];
+  let suggestionIndex = 0;
+  let suggestionStart = 0;
+  let suggestionEnd = 0;
+  let recentEmoji = getRecentEmoji();
 
   $: currentKey = $active ? activeKey($active) : "";
   $: if (currentKey !== lastKey) {
+    if (previousActive) void stopTypingInChannel(previousActive);
+    if (typingStopTimer) clearTimeout(typingStopTimer);
+    previousActive = $active;
     lastKey = currentKey;
     replyTarget = null;
     editingTarget = null;
@@ -72,6 +96,8 @@
     atBottom = true;
     showJump = false;
     forceScroll = true;
+    lastTypingSent = 0;
+    suggestions = [];
     clearPendingAttachments();
     void tick().then(() => {
       resize();
@@ -79,7 +105,12 @@
       composer?.blur();
     });
   }
-  $: typingNames = $prefs.showTyping ? Object.values($typing).map((entry) => entry.name) : [];
+  $: typingNames = $prefs.showTyping
+    ? Object.entries($typing)
+        .filter(([key]) => key.startsWith(`${currentKey}:`))
+        .map(([, entry]) => entry.name)
+    : [];
+  $: quickReactions = recentEmoji.length > 0 ? recentEmoji.slice(0, 3) : ["👍", "🔥", "😂"];
   $: typingLabel =
     typingNames.length === 0
       ? ""
@@ -122,6 +153,7 @@
     members: roster,
     channels: channelList,
     users: dmUsers,
+    mentionAvatars: $prefs.mentionAvatars,
   };
 
   afterUpdate(() => {
@@ -177,21 +209,126 @@
     text = "";
     replyTarget = null;
     editingTarget = null;
+    suggestions = [];
     resizeSoon();
   }
 
   function onInput() {
     resize();
+    updateSuggestions();
     if (!canSendMessages) return;
+    if (!$active) return;
+    if (typingStopTimer) clearTimeout(typingStopTimer);
+    if (!text.trim()) {
+      void stopTypingInChannel();
+      return;
+    }
     const now = Date.now();
-    if ($active && now - lastTypingSent > 3500) {
+    if (now - lastTypingSent > 2000) {
       lastTypingSent = now;
       void typeInChannel();
     }
+    typingStopTimer = setTimeout(() => {
+      void stopTypingInChannel();
+    }, 4500);
+  }
+
+  function tokenAtCaret():
+    | { trigger: string; query: string; start: number; end: number }
+    | null {
+    if (!composer) return null;
+    const caret = composer.selectionStart ?? text.length;
+    const before = text.slice(0, caret);
+    const match = /(^|\s)([@#:])([^\s@#:]*)$/.exec(before);
+    if (!match) return null;
+    const trigger = match[2];
+    const query = match[3];
+    if (trigger === ":" && query.length === 0) return null;
+    return {
+      trigger,
+      query,
+      start: caret - query.length - 1,
+      end: caret,
+    };
+  }
+
+  function updateSuggestions() {
+    const token = tokenAtCaret();
+    if (!token) {
+      suggestions = [];
+      return;
+    }
+    const query = token.query.toLowerCase();
+    let next: Suggestion[] = [];
+    if (token.trigger === "@") {
+      next = $members
+        .filter((member) => {
+          const name = (member.nickname || member.user.display_name || member.user.username).toLowerCase();
+          return !query || name.includes(query) || member.user.username.toLowerCase().includes(query);
+        })
+        .slice(0, 8)
+        .map((member) => ({
+          id: `user:${member.user.id}`,
+          kind: "user" as const,
+          label: member.nickname || member.user.display_name || member.user.username,
+          detail: `@${member.user.username}`,
+          insert: `<@${member.user.id}>`,
+          user: member.user,
+        }));
+    } else if (token.trigger === "#") {
+      next = channelList
+        .filter((channel) => !query || channel.name.toLowerCase().includes(query))
+        .slice(0, 8)
+        .map((channel) => ({
+          id: `channel:${channel.id}`,
+          kind: "channel" as const,
+          label: channel.name,
+          detail: channel.type === "voice" ? "Voice channel" : "Text channel",
+          insert: `<#${channel.id}>`,
+          channel,
+        }));
+    } else {
+      next = searchEmoji(token.query)
+        .slice(0, 8)
+        .map((entry) => ({
+          id: `emoji:${entry.char}`,
+          kind: "emoji" as const,
+          label: `:${entry.name}:`,
+          detail: entry.name,
+          insert: entry.char,
+          char: entry.char,
+        }));
+    }
+    suggestions = next;
+    suggestionStart = token.start;
+    suggestionEnd = token.end;
+    suggestionIndex = 0;
+  }
+
+  function applySuggestion(suggestion: Suggestion) {
+    if (!composer) return;
+    const start = suggestionStart;
+    const end = suggestionEnd;
+    const before = text.slice(0, start);
+    const after = text.slice(end);
+    text = before + suggestion.insert + after;
+    suggestions = [];
+    if (suggestion.kind === "emoji" && suggestion.char) {
+      recentEmoji = pushRecentEmoji(suggestion.char);
+    }
+    void tick().then(() => {
+      composer?.focus();
+      const position = before.length + suggestion.insert.length;
+      composer?.setSelectionRange(position, position);
+      resize();
+    });
   }
 
   async function submit() {
     if (!canSendMessages) return;
+    suggestions = [];
+    if (typingStopTimer) clearTimeout(typingStopTimer);
+    void stopTypingInChannel();
     if (editingTarget) {
       if (!text.trim()) return;
       const target = editingTarget;
@@ -216,6 +353,28 @@
   }
 
   function onComposerKey(event: KeyboardEvent) {
+    if (suggestions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        suggestionIndex = (suggestionIndex + 1) % suggestions.length;
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        suggestionIndex = (suggestionIndex - 1 + suggestions.length) % suggestions.length;
+        return;
+      }
+      if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey && !event.isComposing)) {
+        event.preventDefault();
+        applySuggestion(suggestions[suggestionIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        suggestions = [];
+        return;
+      }
+    }
     const wantsSend =
       $prefs.sendKey === "enter"
         ? event.key === "Enter" && !event.shiftKey && !event.isComposing
@@ -231,12 +390,15 @@
   function beginReply(message: Message) {
     editingTarget = null;
     replyTarget = message;
+    suggestions = [];
     composer?.focus();
+    resizeSoon();
   }
 
   function beginEdit(message: Message) {
     replyTarget = null;
     editingTarget = message;
+    suggestions = [];
     text = message.content;
     void tick().then(() => {
       composer?.focus();
@@ -246,6 +408,10 @@
   }
 
   async function confirmDelete(message: Message) {
+    if ($prefs.quickDelete) {
+      await removeMessage(message.id);
+      return;
+    }
     const confirmed = await confirmAction({
       title: "Delete message?",
       body: "This cannot be undone.",
@@ -258,12 +424,14 @@
 
   function toggle(message: Message, emoji: string) {
     if (!canReact) return;
+    recentEmoji = pushRecentEmoji(emoji);
     const mine = message.reactions?.find((reaction) => reaction.emoji === emoji)?.me ?? false;
     void toggleReaction(message.id, emoji, mine);
   }
 
   function addEmoji(emoji: string) {
     text += emoji;
+    recentEmoji = pushRecentEmoji(emoji);
     composer?.focus();
     resizeSoon();
   }
@@ -536,6 +704,102 @@
     ) ?? false;
   }
 
+  function isVideo(attachment: Attachment): boolean {
+    if (attachment.content_type?.startsWith("video/")) return true;
+    return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(attachment.file_name ?? attachment.url ?? "");
+  }
+
+  function expiryText(attachment: Attachment): string {
+    if (attachment.saved) return "Saved";
+    if (!attachment.expires_at) return "";
+    const time = new Date(attachment.expires_at).getTime();
+    if (!Number.isFinite(time)) return "";
+    const remaining = time - Date.now();
+    if (remaining <= 0) return "Expired";
+    const minutes = Math.ceil(remaining / 60000);
+    if (minutes <= 1) return "Expires in less than a minute";
+    if (minutes < 60) return `Expires in ${minutes} minutes`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 48) return `Expires in ${hours} hour${hours === 1 ? "" : "s"}`;
+    const days = Math.round(hours / 24);
+    if (days < 14) return `Expires in ${days} day${days === 1 ? "" : "s"}`;
+    return `Expires ${new Date(time).toLocaleString()}`;
+  }
+
+  async function requestPictureInPicture(event: MouseEvent, video: HTMLVideoElement) {
+    event.stopPropagation();
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        return;
+      }
+      await video.requestPictureInPicture();
+    } catch {
+      notify("Picture in picture is not available for this video.");
+    }
+  }
+
+  function flattenEmbeds(embeds: Embed[] | undefined): Embed[] {
+    if (!embeds) return [];
+    const result: Embed[] = [];
+    for (const embed of embeds) {
+      if (!embed || typeof embed !== "object") continue;
+      const nested = (embed as { embeds?: unknown }).embeds;
+      if (Array.isArray(nested)) result.push(...(nested as Embed[]));
+      else result.push(embed);
+    }
+    return result;
+  }
+
+  function embedSite(embed: Embed): string {
+    return embed.site_name || embed.siteName || embed.provider_name || embed.providerName || "";
+  }
+
+  function embedTitle(embed: Embed): string {
+    return embed.title ?? "";
+  }
+
+  function embedDescription(embed: Embed): string {
+    return embed.description ?? "";
+  }
+
+  function embedImage(embed: Embed): string | null {
+    const image = embed.image_url || embed.imageUrl || embed.thumbnail_url || embed.thumbnailUrl;
+    return typeof image === "string" ? image : null;
+  }
+
+  function embedVideo(embed: Embed): string | null {
+    const video = embed.video_url || embed.videoUrl;
+    return typeof video === "string" ? video : null;
+  }
+
+  function hasEmbedBody(embed: Embed): boolean {
+    return Boolean(
+      embedTitle(embed) ||
+        embedDescription(embed) ||
+        embedImage(embed) ||
+        embedVideo(embed) ||
+        (embed.fields?.length ?? 0) > 0,
+    );
+  }
+
+  function reactionTitle(message: Message, emoji: string, count: number): string {
+    if ($prefs.whoReacted) {
+      const reaction = message.reactions?.find((entry) => entry.emoji === emoji);
+      const names = (reaction?.users ?? [])
+        .map((user) => user.display_name || user.username)
+        .filter(Boolean);
+      if (names.length > 0) {
+        return `${names.slice(0, 8).join(", ")}${names.length > 8 ? ` and ${names.length - 8} more` : ""}`;
+      }
+    }
+    return `${count} reaction${count === 1 ? "" : "s"}`;
+  }
+
+  function senderUsername(message: Message | null): string {
+    return senderOf(message)?.username ?? "";
+  }
+
   function onMediaLoad() {
     if (atBottom) {
       void tick().then(() => scrollToBottom(false));
@@ -623,6 +887,10 @@
           <div class="day"><span>{formatDay(message.created_at)}</span></div>
         {/if}
 
+        {#if $newMessagesMarker?.key === currentKey && $newMessagesMarker.id === message.id}
+          <div class="new-divider" role="separator" aria-label="New messages"><span>New messages</span></div>
+        {/if}
+
         {#if message.type === "system"}
           <div class="system">
             <span>{message.content}</span>
@@ -637,6 +905,9 @@
             class:highlight={highlightId === message.id}
             data-message-id={message.id}
             on:contextmenu|preventDefault={(event) => showMessageMenu(event, message)}
+            on:dblclick={() => {
+              if ($prefs.messageClickActions) beginReply(message);
+            }}
           >
             {#if !grouped(index)}
               <button
@@ -682,7 +953,7 @@
                     class="author"
                     on:click={(event) => openSenderProfile(event, message)}
                     on:contextmenu|preventDefault={(event) => openSenderMenu(event, message)}
-                  >{authorName(message)}</button>
+                  >{authorName(message)}{#if $prefs.showMeYourName && senderUsername(message) && senderUsername(message) !== authorName(message)}<span class="username">@{senderUsername(message)}</span>{/if}</button>
                   <span class="time">{formatTime(message.created_at, $prefs.timeFormat)}</span>
                 </div>
               {/if}
@@ -714,6 +985,9 @@
                             loading="lazy"
                             on:load={onMediaLoad}
                           />
+                          {#if $prefs.showMediaExpiry && expiryText(attachment)}
+                            <span class="media-note">{expiryText(attachment)}</span>
+                          {/if}
                         </button>
                       {:else}
                         <div class="attachment placeholder">
@@ -722,6 +996,29 @@
                           <small>{formatSize(attachment.file_size)}</small>
                         </div>
                       {/if}
+                    {:else if isVideo(attachment) && attachment.url}
+                      <div class="attachment video">
+                        <video
+                          src={attachment.url}
+                          controls
+                          playsinline
+                          preload="metadata"
+                          on:loadedmetadata={onMediaLoad}
+                        ></video>
+                        {#if $prefs.pictureInPicture}
+                          <button
+                            class="pip"
+                            title="Picture in picture"
+                            aria-label="Picture in picture"
+                            on:click={(event) => requestPictureInPicture(event, event.currentTarget.parentElement?.querySelector("video") as HTMLVideoElement)}
+                          >
+                            <Icon name="maximize" size={13} />
+                          </button>
+                        {/if}
+                        {#if $prefs.showMediaExpiry && expiryText(attachment)}
+                          <span class="media-note">{expiryText(attachment)}</span>
+                        {/if}
+                      </div>
                     {:else}
                       <button
                         class="attachment file"
@@ -731,6 +1028,9 @@
                         <span class="file-copy">
                           <b>{attachment.file_name ?? "file"}</b>
                           <small>{formatSize(attachment.file_size)}</small>
+                          {#if $prefs.showMediaExpiry && expiryText(attachment)}
+                            <small class="expiry">{expiryText(attachment)}</small>
+                          {/if}
                         </span>
                         <Icon name="download" size={15} />
                       </button>
@@ -739,13 +1039,52 @@
                 </div>
               {/if}
 
+              {#each flattenEmbeds(message.embeds) as embed}
+                {#if hasEmbedBody(embed)}
+                  <div class="embed">
+                    <div class="embed-main">
+                      {#if embedSite(embed)}<span class="embed-site">{embedSite(embed)}</span>{/if}
+                      {#if embedTitle(embed)}
+                        {#if embed.url}
+                          <button class="embed-title" on:click={() => embed.url && api.openExternal(embed.url)}>
+                            {embedTitle(embed)}
+                          </button>
+                        {:else}
+                          <span class="embed-title static">{embedTitle(embed)}</span>
+                        {/if}
+                      {/if}
+                      {#if embedDescription(embed)}
+                        <p class="embed-description">{embedDescription(embed)}</p>
+                      {/if}
+                      {#if embed.fields && embed.fields.length > 0}
+                        <div class="embed-fields">
+                          {#each embed.fields as field}
+                            <div class:inline={field.inline}>
+                              <span>{field.name ?? ""}</span>
+                              <p>{field.value ?? ""}</p>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                      {#if embedVideo(embed)}
+                        <video src={embedVideo(embed) ?? ""} controls playsinline preload="metadata"></video>
+                      {:else if embedImage(embed)}
+                        <button class="embed-image" on:click={() => { const image = embedImage(embed); if (image) void api.openExternal(image); }}>
+                          <img src={embedImage(embed) ?? ""} alt="" loading="lazy" on:load={onMediaLoad} />
+                        </button>
+                      {/if}
+                    </div>
+                  </div>
+                {/if}
+              {/each}
+
               {#if message.reactions && message.reactions.length > 0}
                 <div class="reactions">
                   {#each message.reactions as reaction}
                     <button
                       class="reaction"
                       class:me={reaction.me}
-                      title={`${reaction.count} reaction${reaction.count === 1 ? "" : "s"}`}
+                      title={reactionTitle(message, reaction.emoji, reaction.count)}
                       on:click={() => toggle(message, reaction.emoji)}
                     >
                       <Emoji char={reaction.emoji} size={15} title={reaction.emoji} />
@@ -775,6 +1114,18 @@
                 >
                   <Icon name="smile" size={15} />
                 </button>
+                {#if $prefs.quickReactions}
+                  {#each quickReactions as quick}
+                    <button
+                      class="quick"
+                      title={`React with ${quick}`}
+                      aria-label={`React with ${quick}`}
+                      on:click={() => toggle(message, quick)}
+                    >
+                      <Emoji char={quick} size={14} />
+                    </button>
+                  {/each}
+                {/if}
               {/if}
               <button title="Reply" aria-label="Reply" on:click={() => beginReply(message)}>
                 <Icon name="reply" size={15} />
@@ -821,7 +1172,9 @@
     on:drop={onDrop}
   >
     <div class="typing-row">
-      {#if typingLabel}<span class="typing"><i></i><i></i><i></i>{typingLabel}</span>{/if}
+      {#if typingLabel}
+        <span class="typing" class:static={$prefs.noTypingAnimation}><i></i><i></i><i></i>{typingLabel}</span>
+      {/if}
     </div>
 
     {#if $pendingAttachments.length > 0 || $uploadingAttachments}
@@ -834,6 +1187,9 @@
             <Icon name="paperclip" size={13} />
             <span>{attachment.file_name ?? "file"}</span>
             <small>{formatSize(attachment.file_size)}</small>
+            {#if $prefs.showMediaExpiry && expiryText(attachment)}
+              <small class="expiry">{expiryText(attachment)}</small>
+            {/if}
             <button
               aria-label={`Remove ${attachment.file_name ?? "attachment"}`}
               on:click={() => removePendingAttachment(index)}
@@ -841,6 +1197,35 @@
               <Icon name="close" size={12} />
             </button>
           </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if suggestions.length > 0}
+      <div class="suggestions" role="listbox" aria-label="Suggestions">
+        <div class="sug-head">
+          {suggestions[0].kind === "emoji" ? "Emoji" : suggestions[0].kind === "channel" ? "Channels" : "Members"}
+          <span>↑↓ · Tab to insert</span>
+        </div>
+        {#each suggestions as suggestion, index (suggestion.id)}
+          <button
+            class="suggestion"
+            class:selected={index === suggestionIndex}
+            role="option"
+            aria-selected={index === suggestionIndex}
+            on:mousedown|preventDefault
+            on:click={() => applySuggestion(suggestion)}
+          >
+            {#if suggestion.kind === "user"}
+              <Avatar user={suggestion.user ?? null} size={22} status={false} />
+            {:else if suggestion.kind === "channel" && suggestion.channel}
+              <span class="sug-icon"><ChannelIcon name={suggestion.channel.icon} color={suggestion.channel.icon_color} size={14} fallback={suggestion.channel.type === "voice" ? "speaker" : "hash"} /></span>
+            {:else if suggestion.char}
+              <Emoji char={suggestion.char} size={18} />
+            {/if}
+            <span class="sug-label">{suggestion.label}</span>
+            <span class="sug-detail">{suggestion.detail}</span>
+          </button>
         {/each}
       </div>
     {/if}
@@ -863,7 +1248,9 @@
             const wasEditing = !!editingTarget;
             editingTarget = null;
             replyTarget = null;
+            suggestions = [];
             if (wasEditing) clearComposer();
+            else resizeSoon();
           }}
         >
           <Icon name="close" size={13} />
@@ -916,6 +1303,18 @@
         <Icon name="send" size={17} />
       </button>
     </div>
+
+    {#if $prefs.previewMessage && text.trim() && !editingTarget}
+      <div class="message-preview">
+        <span class="preview-label">Preview</span>
+        <div class="preview-body">{@html renderContent(text, renderContext)}</div>
+      </div>
+    {/if}
+    {#if $prefs.characterCounter}
+      <div class="composer-meta">
+        <span class:limit={text.length > 2000}>{text.length}/2000</span>
+      </div>
+    {/if}
     </div>
   </div>
 </section>
@@ -1072,6 +1471,24 @@
     background: var(--line);
     flex: 1;
   }
+  .new-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0 6px;
+    color: #ff6b6b;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .new-divider::before,
+  .new-divider::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: rgba(var(--accent-rgb), 0.55);
+  }
   .message {
     display: flex;
     align-items: flex-start;
@@ -1118,6 +1535,12 @@
   .author:hover {
     text-decoration: underline;
     text-underline-offset: 2px;
+  }
+  .author .username {
+    margin-left: 5px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #737a8b;
   }
   .avatar-hit {
     border: 0;
@@ -1210,6 +1633,15 @@
     object-fit: contain;
     display: inline-block;
     vertical-align: -0.2em;
+    margin-right: 2px;
+  }
+  .content :global(.mention-avatar) {
+    width: 1.2em;
+    height: 1.2em;
+    border-radius: 50%;
+    object-fit: cover;
+    display: inline-block;
+    vertical-align: -0.25em;
     margin-right: 2px;
   }
   .content :global(.user-mention),
@@ -1369,12 +1801,148 @@
   .attachment.image {
     max-width: 420px;
     display: block;
+    position: relative;
   }
   .attachment.image img {
     display: block;
     max-width: 100%;
     max-height: 300px;
     object-fit: cover;
+  }
+  .attachment.video {
+    position: relative;
+    max-width: 460px;
+    display: block;
+    background: #000;
+  }
+  .attachment.video video {
+    display: block;
+    width: 100%;
+    max-height: 340px;
+    background: #000;
+  }
+  .attachment.video .pip {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    background: rgba(12, 13, 16, 0.72);
+    color: #f4f5f7;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .attachment.video:hover .pip {
+    opacity: 1;
+  }
+  .media-note {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(12, 13, 16, 0.74);
+    color: #d9dce3;
+    font-size: 9.5px;
+    pointer-events: none;
+  }
+  .file-copy small.expiry {
+    color: #8a8f9c;
+  }
+  .embed {
+    margin-top: 6px;
+    max-width: 480px;
+    border-left: 3px solid rgba(var(--accent-rgb), 0.55);
+    border-radius: 4px 8px 8px 4px;
+    background: var(--panel-2);
+    padding: 9px 12px;
+  }
+  .embed-main {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .embed-site {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: none;
+  }
+  .embed-title {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #ff8f8f;
+    font-size: 12.5px;
+    font-weight: 650;
+    text-align: left;
+  }
+  .embed-title.static {
+    cursor: default;
+  }
+  .embed-title:hover {
+    text-decoration: underline;
+  }
+  .embed-title.static:hover {
+    text-decoration: none;
+  }
+  .embed-description {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+  }
+  .embed-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-top: 2px;
+  }
+  .embed-fields > div {
+    min-width: 120px;
+    flex: 1 1 100%;
+  }
+  .embed-fields > div.inline {
+    flex: 1 1 30%;
+  }
+  .embed-fields span {
+    display: block;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .embed-fields p {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+  }
+  .embed-image {
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: transparent;
+    max-width: 400px;
+    margin-top: 3px;
+  }
+  .embed-image img {
+    display: block;
+    max-width: 100%;
+    max-height: 260px;
+    object-fit: cover;
+  }
+  .embed video {
+    max-width: 100%;
+    max-height: 300px;
+    margin-top: 3px;
+    border-radius: 6px;
+    background: #000;
   }
   .attachment.placeholder {
     width: 260px;
@@ -1519,6 +2087,9 @@
     background: rgba(var(--accent-rgb), 0.12);
     color: #ff7a7a;
   }
+  .actions button.quick {
+    padding: 0;
+  }
   .delivery {
     position: absolute;
     left: -14px;
@@ -1558,6 +2129,77 @@
     padding: 0 20px 12px;
     position: relative;
   }
+  .suggestions {
+    position: absolute;
+    left: 20px;
+    right: 20px;
+    bottom: calc(100% + 6px);
+    max-height: 262px;
+    overflow-y: auto;
+    padding: 5px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--panel-2);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+    z-index: 8;
+  }
+  .sug-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 7px 6px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .sug-head span {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #636a7b;
+  }
+  .suggestion {
+    width: 100%;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    text-align: left;
+  }
+  .suggestion.selected {
+    background: var(--hover);
+    color: var(--text);
+  }
+  .sug-icon {
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .sug-label {
+    font-size: 12px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sug-detail {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .typing-row {
     height: 18px;
     display: flex;
@@ -1584,6 +2226,10 @@
   .typing i:nth-child(3) {
     animation-delay: 0.3s;
     margin-right: 3px;
+  }
+  .typing.static i {
+    animation: none;
+    opacity: 0.7;
   }
   @keyframes blink {
     0%,
@@ -1743,6 +2389,37 @@
   .composer textarea:disabled {
     cursor: default;
     color: var(--muted);
+  }
+  .message-preview {
+    border-top: 1px solid var(--line);
+    padding: 8px 12px 9px;
+    background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+  }
+  .preview-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .preview-body {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    overflow-wrap: anywhere;
+  }
+  .composer-meta {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 12px 6px;
+    font-size: 9.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .composer-meta .limit {
+    color: #ff7a7a;
   }
   .composer:has(textarea:disabled) {
     opacity: 0.72;

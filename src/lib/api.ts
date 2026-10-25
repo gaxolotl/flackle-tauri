@@ -536,6 +536,11 @@ export async function sendTyping(target: Target): Promise<void> {
   return call("send_typing", { target });
 }
 
+export async function stopTyping(target: Target): Promise<void> {
+  if (!inTauri) return;
+  return call("stop_typing", { target });
+}
+
 export async function markRead(target: Target, messageId: string): Promise<void> {
   if (!inTauri) return;
   return call("mark_read", { target, messageId });
@@ -674,6 +679,39 @@ export async function uploadAttachment(
 export async function setStatus(status: string): Promise<void> {
   if (!inTauri) return;
   return call("set_status", { status });
+}
+
+export async function fetchStatus(): Promise<string> {
+  if (!inTauri) return "online";
+  return call("fetch_status");
+}
+
+export async function updateTypingIndicator(
+  enabled: boolean,
+  text: string | null = null,
+  style: string | null = null,
+): Promise<void> {
+  if (!inTauri) return;
+  return call("update_typing_indicator", { enabled, text, style });
+}
+
+export interface LinkPreviewResponse {
+  token?: string;
+  preview?: unknown;
+}
+
+export async function createLinkPreview(url: string): Promise<LinkPreviewResponse | null> {
+  if (!inTauri) return null;
+  return call("create_link_preview", { url });
+}
+
+export async function updateMessageEmbeds(
+  target: Target,
+  messageId: string,
+  tokens: string[],
+): Promise<unknown> {
+  if (!inTauri) return null;
+  return call("update_message_embeds", { target, messageId, tokens });
 }
 
 export async function notifyNative(title: string, body: string): Promise<void> {

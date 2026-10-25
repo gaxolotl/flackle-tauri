@@ -7,6 +7,7 @@ export interface RenderContext {
   members?: Member[];
   channels?: Channel[];
   users?: User[];
+  mentionAvatars?: boolean;
 }
 
 function safeColor(value: string | null | undefined): string | null {
@@ -38,7 +39,11 @@ function roleChip(id: string, context?: RenderContext): string {
 function userChip(id: string, context?: RenderContext): string {
   const user = findUser(id, context);
   const name = escapeHtml(user?.display_name || user?.username || "user");
-  return `<span class="mention user-mention" data-user-id="${escapeHtml(id)}">@${name}</span>`;
+  const avatar =
+    context?.mentionAvatars && user?.avatar_url
+      ? `<img class="mention-avatar" src="${escapeHtml(user.avatar_url)}" alt="" draggable="false" />`
+      : "";
+  return `<span class="mention user-mention" data-user-id="${escapeHtml(id)}">${avatar}@${name}</span>`;
 }
 
 function channelChip(id: string, context?: RenderContext): string {

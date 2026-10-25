@@ -10,6 +10,7 @@ import type {
   Bootstrap,
   ChannelBundle,
   Conversation,
+  Embed,
   FriendRequests,
   GatewayEvent,
   Member,
@@ -53,6 +54,19 @@ export const connection = writable<"connecting" | "online" | "offline">(
   api.inTauri ? "connecting" : "online",
 );
 export const typing = writable<Record<string, { name: string; expires: number }>>({});
+export const newMessagesMarker = writable<{ key: string; id: string } | null>(null);
+active.subscribe((value) => {
+  if (typeof localStorage === "undefined" || !value) return;
+  const payload =
+    value.kind === "guild"
+      ? { serverId: value.serverId, channelId: value.channelId }
+      : { conversationId: value.conversationId };
+  try {
+    localStorage.setItem("flackle-last-channel", JSON.stringify(payload));
+  } catch {
+    // Remembering the last channel is best-effort.
+  }
+});
 export const hasMore = writable(false);
 export const loadingMessages = writable(false);
 export const showMembers = writable(true);
@@ -61,7 +75,20 @@ export const modal = writable<"settings" | "server-settings" | "server-info" | "
 
 const channelCache = new Map<string, ChannelBundle>();
 const memberCache = new Map<string, Member[]>();
+const pingedDms = new Set<string>();
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+let lastShareTyping: boolean | null = null;
+
+prefs.subscribe((value) => {
+  if (lastShareTyping === null) {
+    lastShareTyping = value.shareTyping;
+    return;
+  }
+  if (lastShareTyping === value.shareTyping) return;
+  lastShareTyping = value.shareTyping;
+  if (!value.shareTyping) void stopTypingInChannel();
+  void syncTypingIndicator();
+});
 
 export function notify(message: string) {
   toast.set(message);
@@ -85,7 +112,80 @@ export async function init(): Promise<boolean> {
 export async function loadWorkspace() {
   const data = await api.bootstrap();
   applyBootstrap(data);
-  await Promise.all([loadServerSettings(), loadSocial()]);
+  await Promise.all([loadServerSettings(), loadSocial(), syncPresence(), syncTypingIndicator()]);
+  if (get(prefs).keepCurrentChannel) await restoreLastChannel();
+}
+
+async function syncPresence() {
+  try {
+    const status = await api.fetchStatus();
+    const user = get(me);
+    if (user) me.set({ ...user, status });
+  } catch {
+    // The profile keeps the status returned by bootstrap.
+  }
+}
+
+export async function syncTypingIndicator() {
+  if (!api.inTauri) return;
+  const user = get(me);
+  if (!get(prefs).shareTyping) {
+    await api.updateTypingIndicator(false).catch(() => {});
+    return;
+  }
+  const text =
+    user?.typing_indicator_text?.trim() &&
+    /^(is|are|was)\s+\S/i.test(user.typing_indicator_text.trim())
+      ? user.typing_indicator_text.trim()
+      : "is typing";
+  const style = user?.typing_indicator_style === "emojis" ? "emojis" : "dots";
+  await api
+    .updateTypingIndicator(true, text, style)
+    .then(() => {
+      const current = get(me);
+      if (current) {
+        me.set({
+          ...current,
+          typing_indicator_enabled: true,
+          typing_indicator_text: text,
+          typing_indicator_style: style,
+        });
+      }
+    })
+    .catch(() => {});
+}
+
+function lastChannelKey() {
+  try {
+    return JSON.parse(localStorage.getItem("flackle-last-channel") ?? "null") as
+      | { serverId: string; channelId: string }
+      | { conversationId: string }
+      | null;
+  } catch {
+    return null;
+  }
+}
+
+async function restoreLastChannel() {
+  if (get(active)) return;
+  const stored = lastChannelKey();
+  if (!stored) return;
+  try {
+    if ("conversationId" in stored) {
+      const conversation = get(conversations).find((entry) => entry.id === stored.conversationId);
+      if (conversation) await openConversation(conversation);
+      return;
+    }
+    const server = get(servers).find((entry) => entry.id === stored.serverId);
+    if (!server) return;
+    const bundle = await ensureChannels(server.id);
+    if (!bundle.channels.some((channel) => channel.id === stored.channelId && channel.type !== "voice")) {
+      return;
+    }
+    await openGuild(server, stored.channelId);
+  } catch {
+    // A removed server or channel simply falls back to the empty view.
+  }
 }
 
 export async function loadSocial() {
@@ -260,13 +360,16 @@ export async function openGuild(server: Server, channelId: string) {
   viewMode.set("server");
   channels.set(bundle);
   messages.set([]);
+  typing.set({});
+  newMessagesMarker.set(null);
   hasMore.set(false);
   serverRoles.set([]);
   serverPermissions.set(null);
   activePermissions.set(bundle.permissions?.[channelId] ?? null);
+  const unreadBefore = get(unreadCounts)[`${server.id}:${channelId}`] ?? 0;
   clearUnread(server.id, channelId);
   await Promise.all([
-    loadMessagesFor(next),
+    loadMessagesFor(next, unreadBefore),
     loadMemberSnapshot(server.id, channelId),
     loadRoles(server.id),
     loadServerPermissions(server.id),
@@ -286,11 +389,18 @@ export async function openConversation(conversation: Conversation) {
   viewMode.set("dm");
   channels.set(null);
   messages.set([]);
+  typing.set({});
+  newMessagesMarker.set(null);
   hasMore.set(false);
   serverRoles.set([]);
   serverPermissions.set(null);
   activePermissions.set(ALL_PERMISSIONS.toString());
-  await loadMessagesFor(next);
+  const unreadBefore = conversation.unread_count ?? 0;
+  conversations.update((list) =>
+    list.map((entry) => (entry.id === conversation.id ? { ...entry, unread_count: 0 } : entry)),
+  );
+  pingedDms.delete(conversation.id);
+  await loadMessagesFor(next, unreadBefore);
 }
 
 function conversationTitle(conversation: Conversation): string {
@@ -559,13 +669,18 @@ function renderable(message: Message): boolean {
   );
 }
 
-export async function loadMessagesFor(target: Active) {
+export async function loadMessagesFor(target: Active, unreadCount = 0) {
   loadingMessages.set(true);
+  newMessagesMarker.set(null);
   try {
     const page = await api.fetchMessages(targetOf(target), null, 50);
     const visible = page.messages.filter(renderable);
     messages.set(visible);
     hasMore.set(page.has_more_before || page.has_more);
+    if (unreadCount > 0 && visible.length > 0) {
+      const index = Math.max(0, visible.length - Math.min(unreadCount, visible.length));
+      newMessagesMarker.set({ key: activeKey(target), id: visible[index].id });
+    }
     const last = visible[visible.length - 1];
     if (last) void api.markRead(targetOf(target), last.id).catch(() => {});
   } catch (error) {
@@ -681,6 +796,9 @@ export async function sendMessage(
         item.id === temporary.id ? { ...message, pending: false } : item,
       ),
     );
+    if (get(prefs).linkPreviews && trimmed) {
+      void attachLinkPreviews(current, message, trimmed);
+    }
   } catch (error) {
     messages.update((list) =>
       list.map((item) =>
@@ -688,6 +806,54 @@ export async function sendMessage(
       ),
     );
     notify(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function embedsFrom(value: unknown): Embed[] | null {
+  if (!value) return null;
+  if (Array.isArray(value)) return value as Embed[];
+  if (typeof value !== "object") return null;
+  const record = value as { embeds?: unknown; message?: { embeds?: unknown } };
+  if (Array.isArray(record.embeds)) return record.embeds as Embed[];
+  if (Array.isArray(record.message?.embeds)) return record.message.embeds as Embed[];
+  return null;
+}
+
+async function attachLinkPreviews(target: Active, message: Message, content: string) {
+  if (message.embeds && message.embeds.length > 0) return;
+  const urls = [...new Set(content.match(/https?:\/\/[^\s<>()]+/g) ?? [])]
+    .filter(
+      (url) =>
+        !/\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|mp3|wav|ogg|pdf)(\?|$)/i.test(url),
+    )
+    .slice(0, 5);
+  if (urls.length === 0) return;
+  const previews = (
+    await Promise.all(
+      urls.map((url) => api.createLinkPreview(url).catch(() => null)),
+    )
+  ).filter((entry): entry is NonNullable<typeof entry> => !!entry);
+  const tokens = previews
+    .map((entry) => entry.token)
+    .filter((token): token is string => typeof token === "string" && token.length > 0);
+  if (tokens.length === 0) return;
+  try {
+    const result = await api.updateMessageEmbeds(targetOf(target), message.id, tokens);
+    const embeds =
+      embedsFrom(result) ??
+      (previews
+        .flatMap((entry) =>
+          Array.isArray(entry.preview) ? entry.preview : entry.preview ? [entry.preview] : [],
+        ) as Embed[]);
+    const current = get(active);
+    if (!current || activeKey(current) !== activeKey(target)) return;
+    messages.update((list) =>
+      list.map((item) =>
+        item.id === message.id ? { ...item, embeds } : item,
+      ),
+    );
+  } catch {
+    // Link previews are best-effort and never block the sent message.
   }
 }
 
@@ -780,43 +946,61 @@ export async function toggleReaction(messageId: string, emoji: string, mine: boo
 
 export async function setMyStatus(status: string) {
   const user = get(me);
+  const previous = user?.status ?? "online";
   if (user) me.set({ ...user, status });
   try {
     await api.setStatus(status);
-  } catch {
-    // status is cosmetic; keep the local value
+    const current = get(me);
+    if (current) me.set({ ...current, status });
+  } catch (error) {
+    if (user) me.set({ ...user, status: previous });
+    notify(error instanceof Error ? error.message : String(error));
+    throw error;
   }
 }
 
 export async function typeInChannel() {
   const current = get(active);
-  if (!current || !api.inTauri) return;
+  if (!current || !api.inTauri || !get(prefs).shareTyping) return;
   await api.sendTyping(targetOf(current)).catch(() => {});
 }
 
-export async function setTypingFor(userId: string, isTyping: boolean) {
+export async function stopTypingInChannel(target?: Active | null) {
+  const current = target ?? get(active);
+  if (!current || !api.inTauri) return;
+  await api.stopTyping(targetOf(current)).catch(() => {});
+}
+
+export async function setTypingFor(channelKey: string, userId: string, isTyping: boolean) {
+  const entryKey = `${channelKey}:${userId}`;
   if (!isTyping) {
     typing.update((map) => {
       const next = { ...map };
-      delete next[userId];
+      delete next[entryKey];
       return next;
     });
     return;
   }
   if (userId === get(me)?.id) return;
-  const name =
-    get(members).find((member) => member.user.id === userId)?.user.display_name ||
-    get(members).find((member) => member.user.id === userId)?.user.username ||
-    "Someone";
+  const member = get(members).find((entry) => entry.user.id === userId);
+  const conversationId = channelKey.startsWith("d:") ? channelKey.slice(2) : null;
+  const conversationUser: User | undefined = conversationId
+    ? get(conversations)
+        .find((entry) => entry.id === conversationId)
+        ?.members?.find((entry) => entry.user.id === userId)?.user
+    : undefined;
+  const friend = get(friends).find((entry) => entry.id === userId);
+  const person = member?.user ?? conversationUser ?? friend;
+  const name = person?.display_name || person?.username || "Someone";
   typing.update((map) => ({
     ...map,
-    [userId]: { name, expires: Date.now() + 6000 },
+    [entryKey]: { name, expires: Date.now() + 6000 },
   }));
   setTimeout(() => {
     typing.update((map) => {
-      if (!map[userId] || map[userId].expires > Date.now()) return map;
+      if (!map[entryKey] || map[entryKey].expires > Date.now()) return map;
       const next = { ...map };
-      delete next[userId];
+      delete next[entryKey];
       return next;
     });
   }, 6200);
@@ -923,9 +1107,18 @@ export function handleGatewayEvent(raw: unknown) {
           server?.default_notification_level ||
           "mentions";
         const serverAllows = level === "all" || (level === "mentions" && mentioned);
+        const dmId = conversationId ?? message.conversation_id ?? null;
+        let dmPingAllowed = true;
+        if (isDm && notificationPrefs.onePingPerDm && dmId) {
+          dmPingAllowed = !pingedDms.has(dmId);
+        }
         const shouldNotify =
           notificationPrefs.notifications &&
+          dmPingAllowed &&
           (isDm || (serverAllows && (!notificationPrefs.mentionsOnly || mentioned)));
+        if (shouldNotify && isDm && notificationPrefs.onePingPerDm && dmId) {
+          pingedDms.add(dmId);
+        }
         if (shouldNotify) {
           const sender =
             message.sender?.display_name || message.sender?.username || "New message";
@@ -954,7 +1147,8 @@ export function handleGatewayEvent(raw: unknown) {
       messages.update((list) => list.filter((item) => item.id !== update.id));
       break;
     }
-    case "typing": {
+    case "typing":
+    case "channel_typing": {
       const update = event as {
         user_id: string;
         is_typing: boolean;
@@ -962,14 +1156,13 @@ export function handleGatewayEvent(raw: unknown) {
         channel_id?: string;
         conversation_id?: string;
       };
-      const current = get(active);
-      const matches =
-        (current?.kind === "guild" &&
-          current.serverId === update.server_id &&
-          current.channelId === update.channel_id) ||
-        (current?.kind === "dm" &&
-          current.conversationId === update.conversation_id);
-      if (matches) void setTypingFor(update.user_id, update.is_typing);
+      const channelKey =
+        update.server_id && update.channel_id
+          ? `g:${update.server_id}:${update.channel_id}`
+          : update.conversation_id
+            ? `d:${update.conversation_id}`
+            : null;
+      if (channelKey) void setTypingFor(channelKey, update.user_id, update.is_typing);
       break;
     }
     case "presence": {

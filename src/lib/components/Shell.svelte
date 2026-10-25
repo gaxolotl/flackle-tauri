@@ -14,7 +14,7 @@
     openChannelCreate,
     openChannelEdit,
   } from "../channel-dialog";
-  import type { Category, Channel, ChannelBundle, Conversation, PaletteItemLike } from "../types";
+  import type { Category, Channel, ChannelBundle, Conversation, PaletteItemLike, Server } from "../types";
   import {
     active,
     channels,
@@ -35,6 +35,7 @@
     serverSettings,
     servers,
     setServerNotificationLevel,
+    setMyStatus,
     showMembers,
     unreadCounts,
     viewMode,
@@ -56,6 +57,38 @@
   let dragOverGroup: string | null = null;
   let dragOverChannel: string | null = null;
   let suppressClick = false;
+  let serverTip: { server: Server; top: number; left: number } | null = null;
+  let statusMenu = false;
+
+  const statusChoices = [
+    { id: "online", label: "Online", color: "var(--green)" },
+    { id: "idle", label: "Idle", color: "var(--yellow)" },
+    { id: "dnd", label: "Do not disturb", color: "var(--accent)" },
+    { id: "invisible", label: "Invisible", color: "#6b7280" },
+  ];
+
+  function showServerTip(event: MouseEvent | FocusEvent, server: Server) {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    serverTip = { server, top: rect.top + rect.height / 2, left: rect.right + 10 };
+  }
+
+  function hideServerTip() {
+    serverTip = null;
+  }
+
+  async function chooseStatus(next: string) {
+    statusMenu = false;
+    try {
+      await setMyStatus(next);
+    } catch {
+      // setMyStatus already reported the failure and restored the previous status.
+    }
+  }
+
+  function serverVerified(server: Server): boolean {
+    if (server.verified) return true;
+    return (server.flags ?? "").toLowerCase().split(/[\s,]+/).includes("verified");
+  }
 
   $: canManageChannels =
     $serverPermissions !== null && hasPermission($serverPermissions, "ManageChannels");
@@ -64,6 +97,10 @@
     $active?.kind === "guild" ? $servers.find((server) => server.id === $active?.serverId) : undefined;
 
   $: incomingFriendRequests = $friendRequests.incoming.length;
+  $: statusLabel =
+    $me?.status === "invisible"
+      ? "Invisible"
+      : (statusChoices.find((choice) => choice.id === $me?.status)?.label ?? "Offline");
 
   $: unreadByServer = Object.entries($unreadCounts).reduce(
     (accumulator, [key, count]) => {
@@ -698,9 +735,15 @@
             class:selected={$active?.kind === "guild" && $active.serverId === server.id}
             class:has-icon={!!server.icon_url}
             style={`--sc:${avatarColor(server.name)}`}
-            title={server.name}
             aria-label={server.name}
-            on:click={() => selectServer(server.id)}
+            on:mouseenter={(event) => showServerTip(event, server)}
+            on:mouseleave={hideServerTip}
+            on:focus={(event) => showServerTip(event, server)}
+            on:blur={hideServerTip}
+            on:click={() => {
+              hideServerTip();
+              void selectServer(server.id);
+            }}
             on:contextmenu|preventDefault={(event) => showServerMenu(event, server)}
           >
             {#if server.icon_url}
@@ -729,6 +772,27 @@
       </div>
     </nav>
 
+    {#if serverTip}
+      <div
+        class="server-tip"
+        role="tooltip"
+        style={`top:${serverTip.top}px; left:${serverTip.left}px`}
+      >
+        <div class="tip-name">
+          <span>{serverTip.server.name}</span>
+          {#if serverVerified(serverTip.server)}
+            <span class="tip-badge" title="Verified server" aria-label="Verified server">
+              <Icon name="check" size={9} />
+            </span>
+          {/if}
+        </div>
+        <div class="tip-stats">
+          <span><i class="tip-online"></i>{serverTip.server.approx_presence_count ?? "—"} online</span>
+          <span>{serverTip.server.approx_member_count ?? "—"} members</span>
+        </div>
+      </div>
+    {/if}
+
     <aside class="sidebar">
       {#if $viewMode === "dm"}
         <header class="side-head">
@@ -742,7 +806,7 @@
             on:click={() => modal.set("friends")}
           >
             <Icon name="users" size={16} />
-            {#if incomingFriendRequests > 0}
+            {#if incomingFriendRequests > 0 && !$prefs.hidePendingCount}
               <span class="friend-count">{incomingFriendRequests > 9 ? "9+" : incomingFriendRequests}</span>
             {/if}
           </button>
@@ -906,26 +970,63 @@
       {/if}
 
       <div class="user-panel">
-        <button
-          class="user-self"
-          aria-label="Your profile"
-          on:click={(event) => {
-            if (!$me) return;
-            openProfile(
-              $me,
-              $members.find((member) => member.user.id === $me?.id),
-              event.currentTarget as HTMLElement | null,
-            );
-          }}
-        >
-          <Avatar user={$me} size={34} />
-          <div class="user-copy">
-            <b>{$me?.display_name || $me?.username}</b>
-          </div>
-        </button>
+        <div class="user-self-wrap">
+          <button
+            class="user-self"
+            aria-label="Your profile"
+            on:click={(event) => {
+              if (!$me) return;
+              openProfile(
+                $me,
+                $members.find((member) => member.user.id === $me?.id),
+                event.currentTarget as HTMLElement | null,
+              );
+            }}
+          >
+            <Avatar user={$me} size={34} />
+            <div class="user-copy">
+              <b>{$me?.display_name || $me?.username}</b>
+              <span>{statusLabel}</span>
+            </div>
+          </button>
+          <button
+            class="status-trigger"
+            class:online={$me?.status === "online"}
+            class:idle={$me?.status === "idle"}
+            class:dnd={$me?.status === "dnd"}
+            title="Set status"
+            aria-label="Set status"
+            aria-expanded={statusMenu}
+            on:click={() => (statusMenu = !statusMenu)}
+          >
+            <i></i>
+          </button>
+        </div>
         <button class="icon-btn" aria-label="Settings" on:click={() => modal.set("settings")}>
           <Icon name="settings" size={17} />
         </button>
+
+        {#if statusMenu}
+          <button
+            class="status-backdrop"
+            aria-label="Close status menu"
+            on:click={() => (statusMenu = false)}
+          ></button>
+          <div class="status-menu" role="menu" aria-label="Set status">
+            <span class="status-title">Set status</span>
+            {#each statusChoices as choice}
+              <button
+                role="menuitem"
+                class:active={$me?.status === choice.id}
+                on:click={() => chooseStatus(choice.id)}
+              >
+                <i style={`background:${choice.color}`}></i>
+                <span>{choice.label}</span>
+                {#if $me?.status === choice.id}<Icon name="check" size={12} />{/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
     </aside>
 
@@ -1436,6 +1537,13 @@
     align-items: center;
     gap: 9px;
     padding: 0 8px 0 12px;
+    position: relative;
+  }
+  .user-self-wrap {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
   }
   .user-copy {
     display: flex;
@@ -1474,17 +1582,144 @@
     align-items: center;
     gap: 5px;
   }
-  .presence {
+  .status-trigger {
+    position: absolute;
+    left: 31px;
+    bottom: 1px;
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--sidebar);
+    background: var(--panel-2);
+    display: grid;
+    place-items: center;
+  }
+  .status-trigger i {
     width: 6px;
     height: 6px;
     border-radius: 50%;
+    background: #6b7280;
+  }
+  .status-trigger.online i {
     background: var(--green);
   }
-  .presence.idle {
+  .status-trigger.idle i {
     background: var(--yellow);
   }
-  .presence.dnd {
+  .status-trigger.dnd i {
     background: var(--accent);
+  }
+  .status-trigger:hover {
+    border-color: var(--line-strong);
+    background: var(--panel-3);
+  }
+  .status-backdrop {
+    position: fixed;
+    inset: 0;
+    border: 0;
+    background: transparent;
+    z-index: 30;
+  }
+  .status-menu {
+    position: absolute;
+    left: 10px;
+    bottom: calc(100% + 7px);
+    width: 188px;
+    padding: 5px;
+    border: 1px solid var(--line-strong);
+    border-radius: 9px;
+    background: var(--panel-2);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+    z-index: 31;
+  }
+  .status-title {
+    display: block;
+    padding: 5px 8px 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .status-menu button {
+    width: 100%;
+    height: 31px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .status-menu button > span {
+    flex: 1;
+    text-align: left;
+  }
+  .status-menu button:hover,
+  .status-menu button.active {
+    background: var(--hover);
+    color: var(--text);
+  }
+  .status-menu button > i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .server-tip {
+    position: fixed;
+    z-index: 40;
+    transform: translateY(-50%);
+    min-width: 168px;
+    max-width: 248px;
+    padding: 9px 11px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--panel-2);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+  }
+  .tip-name {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12.5px;
+    font-weight: 650;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .tip-badge {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(var(--accent-rgb), 0.16);
+    color: #ff8f8f;
+  }
+  .tip-stats {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+    font-size: 10.5px;
+    color: var(--muted);
+  }
+  .tip-stats span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .tip-online {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--green);
   }
   .content {
     flex: 1;

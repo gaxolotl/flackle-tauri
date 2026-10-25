@@ -25,6 +25,14 @@ pub struct User {
     #[serde(default)]
     pub is_online: Option<bool>,
     #[serde(default)]
+    pub typing_indicator_enabled: Option<bool>,
+    #[serde(default)]
+    pub typing_indicator_text: Option<String>,
+    #[serde(default)]
+    pub typing_indicator_style: Option<String>,
+    #[serde(default)]
+    pub typing_indicator_emojis: Option<Vec<String>>,
+    #[serde(default)]
     pub created_at: Option<String>,
     #[serde(default)]
     pub updated_at: Option<String>,
@@ -74,6 +82,10 @@ pub struct Attachment {
     pub width: Option<u32>,
     #[serde(default)]
     pub height: Option<u32>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub saved: Option<bool>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

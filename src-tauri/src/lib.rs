@@ -731,6 +731,11 @@ async fn send_typing(state: tauri::State<'_, AppState>, target: Target) -> Resul
 }
 
 #[tauri::command]
+async fn stop_typing(state: tauri::State<'_, AppState>, target: Target) -> Result<(), String> {
+    state.client.stop_typing(&target).await.map_err(error_text)
+}
+
+#[tauri::command]
 async fn mark_read(
     state: tauri::State<'_, AppState>,
     target: Target,
@@ -1043,6 +1048,47 @@ async fn set_status(state: tauri::State<'_, AppState>, status: String) -> Result
 }
 
 #[tauri::command]
+async fn fetch_status(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    state.client.fetch_status().await.map_err(error_text)
+}
+
+#[tauri::command]
+async fn update_typing_indicator(
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+    text: Option<String>,
+    style: Option<String>,
+) -> Result<(), String> {
+    state
+        .client
+        .update_typing_indicator(enabled, text.as_deref(), style.as_deref())
+        .await
+        .map_err(error_text)
+}
+
+#[tauri::command]
+async fn create_link_preview(
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<Value, String> {
+    state.client.create_link_preview(&url).await.map_err(error_text)
+}
+
+#[tauri::command]
+async fn update_message_embeds(
+    state: tauri::State<'_, AppState>,
+    target: Target,
+    message_id: String,
+    tokens: Vec<String>,
+) -> Result<Value, String> {
+    state
+        .client
+        .update_message_embeds(&target, &message_id, tokens)
+        .await
+        .map_err(error_text)
+}
+
+#[tauri::command]
 fn is_connected(state: tauri::State<'_, AppState>) -> bool {
     state.client.is_connected()
 }
@@ -1207,6 +1253,7 @@ pub fn run() {
             edit_message,
             delete_message,
             send_typing,
+            stop_typing,
             mark_read,
             react,
             unreact,
@@ -1235,6 +1282,10 @@ pub fn run() {
             create_backup_codes,
             upload_attachment,
             set_status,
+            fetch_status,
+            update_typing_indicator,
+            create_link_preview,
+            update_message_embeds,
             is_connected,
             notify_native
         ])

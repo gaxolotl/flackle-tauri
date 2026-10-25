@@ -106,7 +106,8 @@ export function getRecentEmoji(): string[] {
   }
 }
 
-export function pushRecentEmoji(char: string) {
+export function pushRecentEmoji(char: string): string[] {
   const next = [char, ...getRecentEmoji().filter((item) => item !== char)].slice(0, 20);
   localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  return next;
 }
