@@ -97,10 +97,6 @@
     $active?.kind === "guild" ? $servers.find((server) => server.id === $active?.serverId) : undefined;
 
   $: incomingFriendRequests = $friendRequests.incoming.length;
-  $: statusLabel =
-    $me?.status === "invisible"
-      ? "Invisible"
-      : (statusChoices.find((choice) => choice.id === $me?.status)?.label ?? "Offline");
 
   $: unreadByServer = Object.entries($unreadCounts).reduce(
     (accumulator, [key, count]) => {
@@ -983,10 +979,11 @@
               );
             }}
           >
-            <Avatar user={$me} size={34} />
+            <div class="user-avatar">
+              <Avatar user={$me} size={34} status={false} />
+            </div>
             <div class="user-copy">
               <b>{$me?.display_name || $me?.username}</b>
-              <span>{statusLabel}</span>
             </div>
           </button>
           <button
@@ -1575,25 +1572,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .user-copy span {
-    font-size: 10px;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    gap: 5px;
+  .user-avatar {
+    width: 34px;
+    height: 34px;
+    flex: none;
   }
   .status-trigger {
     position: absolute;
-    left: 31px;
+    left: 20px;
     bottom: 1px;
-    width: 13px;
-    height: 13px;
+    width: 14px;
+    height: 14px;
     padding: 0;
     border-radius: 50%;
     border: 2px solid var(--sidebar);
     background: var(--panel-2);
     display: grid;
     place-items: center;
+    z-index: 1;
   }
   .status-trigger i {
     width: 6px;

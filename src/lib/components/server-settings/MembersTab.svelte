@@ -6,7 +6,7 @@
   import { openProfile } from "../../profile";
   import { showUserMenu } from "../../user-menu";
   import type { Member, Role, Server } from "../../types";
-  import { me, notify, serverPermissions } from "../../workspace";
+  import { me, notify, serverPermissions, setMemberRoles as applyMemberRoles } from "../../workspace";
   import Avatar from "../Avatar.svelte";
   import Emoji from "../Emoji.svelte";
   import EmojiText from "../EmojiText.svelte";
@@ -94,7 +94,8 @@
     if (!canManageRoles || busy === member.user.id) return;
     busy = member.user.id;
     try {
-      const updated = await api.setMemberRoles(server.id, member.user.id, [roleId], []);
+      const updated = await applyMemberRoles(member.user.id, [roleId], []);
+      if (!updated) return;
       members = members.map((entry) =>
         entry.user.id === member.user.id ? mergeMember(entry, updated) : entry,
       );
@@ -110,7 +111,8 @@
     if (!canManageRoles || busy === member.user.id) return;
     busy = member.user.id;
     try {
-      const updated = await api.setMemberRoles(server.id, member.user.id, [], [roleId]);
+      const updated = await applyMemberRoles(member.user.id, [], [roleId]);
+      if (!updated) return;
       members = members.map((entry) =>
         entry.user.id === member.user.id ? mergeMember(entry, updated) : entry,
       );

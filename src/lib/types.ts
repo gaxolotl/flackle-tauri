@@ -7,6 +7,10 @@ export interface User {
   avatar_url?: string | null;
   banner_url?: string | null;
   status?: string | null;
+  typing_indicator_enabled?: boolean | null;
+  typing_indicator_text?: string | null;
+  typing_indicator_style?: string | null;
+  typing_indicator_emojis?: string[] | null;
 }
 
 export interface SelfUser extends User {

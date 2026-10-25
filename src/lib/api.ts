@@ -690,9 +690,10 @@ export async function updateTypingIndicator(
   enabled: boolean,
   text: string | null = null,
   style: string | null = null,
+  emojis: string[] | null = null,
 ): Promise<void> {
   if (!inTauri) return;
-  return call("update_typing_indicator", { enabled, text, style });
+  return call("update_typing_indicator", { enabled, text, style, emojis });
 }
 
 export interface LinkPreviewResponse {

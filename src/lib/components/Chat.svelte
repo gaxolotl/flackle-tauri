@@ -4,7 +4,7 @@
   import { formatDay, formatSize, formatTime, renderContent, sameDay } from "../format";
   import { prefs } from "../preferences";
   import { getRecentEmoji, pushRecentEmoji, searchEmoji } from "../emoji";
-  import type { Active, Attachment, Channel, Embed, Message, User } from "../types";
+  import type { Active, Attachment, Channel, Embed, Message, Role, User } from "../types";
   import { activeKey } from "../types";
   import { hasPermission } from "../permissions";
   import { openProfile } from "../profile";
@@ -49,6 +49,7 @@
   import EmojiPicker from "./EmojiPicker.svelte";
   import EmojiText from "./EmojiText.svelte";
   import Icon from "./Icon.svelte";
+  import VideoPlayer from "./VideoPlayer.svelte";
 
   let scroller: HTMLDivElement;
   let composer: HTMLTextAreaElement;
@@ -69,12 +70,13 @@
 
   type Suggestion = {
     id: string;
-    kind: "user" | "channel" | "emoji";
+    kind: "user" | "channel" | "emoji" | "role";
     label: string;
     detail: string;
     insert: string;
     user?: User | null;
     channel?: Channel;
+    role?: Role;
     char?: string;
   };
   let suggestions: Suggestion[] = [];
@@ -105,19 +107,29 @@
       composer?.blur();
     });
   }
-  $: typingNames = $prefs.showTyping
+  $: typingEntries = $prefs.showTyping
     ? Object.entries($typing)
         .filter(([key]) => key.startsWith(`${currentKey}:`))
-        .map(([, entry]) => entry.name)
+        .map(([, entry]) => entry)
     : [];
+  $: singleTyping = typingEntries.length === 1 ? typingEntries[0] : null;
+  $: singleTypingUser = singleTyping
+    ? ($members.find((member) => member.user.id === singleTyping?.userId)?.user ??
+      $conversations
+        .flatMap((conversation) => conversation.members ?? [])
+        .find((member) => member.user.id === singleTyping?.userId)?.user)
+    : undefined;
+  $: singleTypingIndicator = singleTypingUser ? typingIndicator(singleTypingUser) : null;
   $: quickReactions = recentEmoji.length > 0 ? recentEmoji.slice(0, 3) : ["👍", "🔥", "😂"];
   $: typingLabel =
-    typingNames.length === 0
+    typingEntries.length === 0
       ? ""
-      : typingNames.length === 1
-        ? `${typingNames[0]} is typing…`
-        : typingNames.length === 2
-          ? `${typingNames[0]} and ${typingNames[1]} are typing…`
+      : typingEntries.length === 1
+        ? singleTypingIndicator
+          ? `${typingEntries[0].name} ${singleTypingIndicator.text}`
+          : `${typingEntries[0].name} is typing…`
+        : typingEntries.length === 2
+          ? `${typingEntries[0].name} and ${typingEntries[1].name} are typing…`
           : "Several people are typing…";
   $: channelTitle = $active?.title ?? "Conversation";
   $: activeTopic =
@@ -155,6 +167,19 @@
     users: dmUsers,
     mentionAvatars: $prefs.mentionAvatars,
   };
+  $: suggestionHeading =
+    suggestions.length === 0
+      ? ""
+      : suggestions[0].kind === "emoji"
+        ? "Emoji"
+        : suggestions[0].kind === "channel"
+          ? "Channels"
+          : suggestions.some((suggestion) => suggestion.kind === "role") &&
+              suggestions.some((suggestion) => suggestion.kind === "user")
+            ? "Members & roles"
+            : suggestions.some((suggestion) => suggestion.kind === "role")
+              ? "Roles"
+              : "Members";
 
   afterUpdate(() => {
     if (forceScroll && !$loadingMessages) {
@@ -261,7 +286,7 @@
     const query = token.query.toLowerCase();
     let next: Suggestion[] = [];
     if (token.trigger === "@") {
-      next = $members
+      const memberMatches = $members
         .filter((member) => {
           const name = (member.nickname || member.user.display_name || member.user.username).toLowerCase();
           return !query || name.includes(query) || member.user.username.toLowerCase().includes(query);
@@ -275,6 +300,23 @@
           insert: `<@${member.user.id}>`,
           user: member.user,
         }));
+      const roleMatches = roleList
+        .filter(
+          (role) =>
+            !role.is_everyone &&
+            role.mentionable !== false &&
+            (!query || role.name.toLowerCase().includes(query)),
+        )
+        .slice(0, 4)
+        .map((role) => ({
+          id: `role:${role.id}`,
+          kind: "role" as const,
+          label: `@${role.name}`,
+          detail: "Notify role members",
+          insert: `<@&${role.id}>`,
+          role,
+        }));
+      next = [...memberMatches, ...roleMatches];
     } else if (token.trigger === "#") {
       next = channelList
         .filter((channel) => !query || channel.name.toLowerCase().includes(query))
@@ -589,6 +631,36 @@
     return sender?.display_name || sender?.username || "Deleted user";
   }
 
+  function authorColor(message: Message | null): string {
+    const sender = senderOf(message);
+    if (!sender) return "";
+    const member = roster.find((entry) => entry.user.id === sender.id);
+    const ids = member?.role_ids ?? member?.roles ?? [];
+    const role = roleList
+      .filter(
+        (entry) =>
+          !entry.is_everyone &&
+          ids.includes(entry.id) &&
+          /^#[0-9a-f]{3,8}$/i.test(entry.color ?? ""),
+      )
+      .sort((a, b) => (b.position ?? 0) - (a.position ?? 0))[0];
+    return role?.color ?? "";
+  }
+
+  function typingIndicator(user: User) {
+    if (!user.typing_indicator_enabled) return null;
+    const text = user.typing_indicator_text?.trim() ?? "";
+    if (text.length < 2 || text.length > 40 || !/^(is|are|was)\s+\S/i.test(text)) {
+      return null;
+    }
+    const style = user.typing_indicator_style === "emojis" ? "emojis" : "dots";
+    const emojis = (user.typing_indicator_emojis ?? [])
+      .map((emoji) => emoji.trim())
+      .filter(Boolean);
+    if (style === "emojis" && emojis.length !== 3) return null;
+    return { text, style, emojis };
+  }
+
   function isMine(message: Message): boolean {
     const sender = senderOf(message);
     return !!sender && sender.id === $me?.id;
@@ -724,19 +796,6 @@
     const days = Math.round(hours / 24);
     if (days < 14) return `Expires in ${days} day${days === 1 ? "" : "s"}`;
     return `Expires ${new Date(time).toLocaleString()}`;
-  }
-
-  async function requestPictureInPicture(event: MouseEvent, video: HTMLVideoElement) {
-    event.stopPropagation();
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-        return;
-      }
-      await video.requestPictureInPicture();
-    } catch {
-      notify("Picture in picture is not available for this video.");
-    }
   }
 
   function flattenEmbeds(embeds: Embed[] | undefined): Embed[] {
@@ -951,6 +1010,7 @@
                 <div class="meta">
                   <button
                     class="author"
+                    style={authorColor(message) ? `color:${authorColor(message)}` : ""}
                     on:click={(event) => openSenderProfile(event, message)}
                     on:contextmenu|preventDefault={(event) => openSenderMenu(event, message)}
                   >{authorName(message)}{#if $prefs.showMeYourName && senderUsername(message) && senderUsername(message) !== authorName(message)}<span class="username">@{senderUsername(message)}</span>{/if}</button>
@@ -998,25 +1058,13 @@
                       {/if}
                     {:else if isVideo(attachment) && attachment.url}
                       <div class="attachment video">
-                        <video
+                        <VideoPlayer
                           src={attachment.url}
-                          controls
-                          playsinline
-                          preload="metadata"
-                          on:loadedmetadata={onMediaLoad}
-                        ></video>
-                        {#if $prefs.pictureInPicture}
-                          <button
-                            class="pip"
-                            title="Picture in picture"
-                            aria-label="Picture in picture"
-                            on:click={(event) => requestPictureInPicture(event, event.currentTarget.parentElement?.querySelector("video") as HTMLVideoElement)}
-                          >
-                            <Icon name="maximize" size={13} />
-                          </button>
-                        {/if}
+                          showPip={$prefs.pictureInPicture}
+                          onLoaded={onMediaLoad}
+                        />
                         {#if $prefs.showMediaExpiry && expiryText(attachment)}
-                          <span class="media-note">{expiryText(attachment)}</span>
+                          <span class="media-note video-note">{expiryText(attachment)}</span>
                         {/if}
                       </div>
                     {:else}
@@ -1067,7 +1115,11 @@
                         </div>
                       {/if}
                       {#if embedVideo(embed)}
-                        <video src={embedVideo(embed) ?? ""} controls playsinline preload="metadata"></video>
+                        <VideoPlayer
+                          src={embedVideo(embed) ?? ""}
+                          showPip={$prefs.pictureInPicture}
+                          onLoaded={onMediaLoad}
+                        />
                       {:else if embedImage(embed)}
                         <button class="embed-image" on:click={() => { const image = embedImage(embed); if (image) void api.openExternal(image); }}>
                           <img src={embedImage(embed) ?? ""} alt="" loading="lazy" on:load={onMediaLoad} />
@@ -1173,7 +1225,21 @@
   >
     <div class="typing-row">
       {#if typingLabel}
-        <span class="typing" class:static={$prefs.noTypingAnimation}><i></i><i></i><i></i>{typingLabel}</span>
+        <span class="typing" class:static={$prefs.noTypingAnimation}>
+          {#if singleTypingIndicator && singleTypingIndicator.style === "emojis"}
+            <span class="typing-emojis">
+              {#each singleTypingIndicator.emojis as emoji}
+                <Emoji char={emoji} size={14} />
+              {/each}
+            </span>
+          {:else}
+            <i></i><i></i><i></i>
+          {/if}
+          {#if singleTyping && singleTypingUser && singleTypingIndicator?.style !== "emojis"}
+            <Avatar user={singleTypingUser} size={16} status={false} />
+          {/if}
+          {typingLabel}
+        </span>
       {/if}
     </div>
 
@@ -1204,7 +1270,7 @@
     {#if suggestions.length > 0}
       <div class="suggestions" role="listbox" aria-label="Suggestions">
         <div class="sug-head">
-          {suggestions[0].kind === "emoji" ? "Emoji" : suggestions[0].kind === "channel" ? "Channels" : "Members"}
+          {suggestionHeading}
           <span>↑↓ · Tab to insert</span>
         </div>
         {#each suggestions as suggestion, index (suggestion.id)}
@@ -1220,10 +1286,27 @@
               <Avatar user={suggestion.user ?? null} size={22} status={false} />
             {:else if suggestion.kind === "channel" && suggestion.channel}
               <span class="sug-icon"><ChannelIcon name={suggestion.channel.icon} color={suggestion.channel.icon_color} size={14} fallback={suggestion.channel.type === "voice" ? "speaker" : "hash"} /></span>
+            {:else if suggestion.kind === "role" && suggestion.role}
+              <span
+                class="sug-role"
+                style={suggestion.role.color ? `--role-color:${suggestion.role.color}` : ""}
+              >
+                {#if suggestion.role.icon_url}
+                  <img src={suggestion.role.icon_url} alt="" />
+                {:else if suggestion.role.icon_emoji}
+                  <Emoji char={suggestion.role.icon_emoji} size={14} />
+                {:else}
+                  <i></i>
+                {/if}
+              </span>
             {:else if suggestion.char}
               <Emoji char={suggestion.char} size={18} />
             {/if}
-            <span class="sug-label">{suggestion.label}</span>
+            <span
+              class="sug-label"
+              class:role-label={suggestion.kind === "role"}
+              style={suggestion.role?.color ? `color:${suggestion.role.color}` : ""}
+            >{suggestion.label}</span>
             <span class="sug-detail">{suggestion.detail}</span>
           </button>
         {/each}
@@ -1811,33 +1894,16 @@
   }
   .attachment.video {
     position: relative;
-    max-width: 460px;
+    max-width: 400px;
     display: block;
     background: #000;
   }
-  .attachment.video video {
-    display: block;
+  .attachment.video :global(.player) {
     width: 100%;
-    max-height: 340px;
-    background: #000;
   }
-  .attachment.video .pip {
-    position: absolute;
+  .attachment.video .media-note {
     top: 6px;
-    right: 6px;
-    width: 24px;
-    height: 24px;
-    display: grid;
-    place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 6px;
-    background: rgba(12, 13, 16, 0.72);
-    color: #f4f5f7;
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-  .attachment.video:hover .pip {
-    opacity: 1;
+    bottom: auto;
   }
   .media-note {
     position: absolute;
@@ -1937,12 +2003,8 @@
     max-height: 260px;
     object-fit: cover;
   }
-  .embed video {
-    max-width: 100%;
-    max-height: 300px;
+  .embed :global(.player) {
     margin-top: 3px;
-    border-radius: 6px;
-    background: #000;
   }
   .attachment.placeholder {
     width: 260px;
@@ -2185,6 +2247,28 @@
     place-items: center;
     flex: none;
   }
+  .sug-role {
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .sug-role img {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+  .sug-role i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--role-color, var(--muted));
+  }
+  .sug-label.role-label {
+    font-weight: 600;
+  }
   .sug-label {
     font-size: 12px;
     color: var(--text);
@@ -2225,6 +2309,12 @@
   }
   .typing i:nth-child(3) {
     animation-delay: 0.3s;
+    margin-right: 3px;
+  }
+  .typing-emojis {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
     margin-right: 3px;
   }
   .typing.static i {

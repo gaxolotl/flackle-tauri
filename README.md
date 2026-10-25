@@ -21,7 +21,7 @@ not bundle Node, Bun, or a second Chromium runtime.
 - Servers, categories, text channels, voice-channel metadata, direct messages, group
   conversations, members, roles, invites, bans, and audit logs.
 - Message history, pagination, editing, deletion, replies, reactions, attachments, previews,
-  typing indicators, unread state, pings, and live gateway updates.
+  role mentions, typing indicators, unread state, pings, and live gateway updates.
 - Friends and direct messaging with incoming/outgoing requests, blocking, and user context
   menus.
 - Profile cards, roles, permission-aware controls, moderation actions, and server/channel
@@ -29,10 +29,12 @@ not bundle Node, Bun, or a second Chromium runtime.
 - TOTP two-factor authentication, backup codes, active-session management, security events,
   and session revocation.
 - Bundled Twemoji rendering, searchable emoji picker, customizable keybinds, density, text
-  size, reduced motion, notification rules, and dark/light/system themes.
+  size, reduced motion, notification rules, custom typing phrases and emoji styles, and
+  dark/light/system themes.
 - Optional enhancements with real behavior and a settings toggle: link previews, inline video
-  with picture-in-picture, live composer preview, character counter, mention avatars, quick
-  reactions, who-reacted tooltips, attachment expiry labels, and keep-current-channel.
+  with a custom Flackle-style player and picture-in-picture, live composer preview, character
+  counter, mention avatars, quick reactions, who-reacted tooltips, attachment expiry labels,
+  and keep-current-channel.
 
 ## Why it is lighter
 

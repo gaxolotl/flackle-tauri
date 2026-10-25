@@ -9,6 +9,7 @@
   import {
     active,
     me,
+    members,
     modal,
     notify,
     presenceStatuses,
@@ -74,6 +75,20 @@
   $: status = target
     ? $presenceStatuses[target.user.id] ?? target.user.status ?? "offline"
     : "offline";
+  $: liveMember = target
+    ? $members.find((member) => member.user.id === target?.user.id)
+    : undefined;
+  $: if (target && liveMember && liveMember !== target.member) {
+    profile.update((current) =>
+      current && current.user.id === target?.user.id
+        ? {
+            ...current,
+            member: liveMember,
+            user: { ...current.user, ...liveMember.user },
+          }
+        : current,
+    );
+  }
   $: if (target) position = computePosition(anchorRect, cardHeight);
 
   function clamp(value: number, min: number, max: number) {

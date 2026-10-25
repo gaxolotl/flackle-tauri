@@ -1058,10 +1058,11 @@ async fn update_typing_indicator(
     enabled: bool,
     text: Option<String>,
     style: Option<String>,
+    emojis: Option<Vec<String>>,
 ) -> Result<(), String> {
     state
         .client
-        .update_typing_indicator(enabled, text.as_deref(), style.as_deref())
+        .update_typing_indicator(enabled, text.as_deref(), style.as_deref(), emojis)
         .await
         .map_err(error_text)
 }

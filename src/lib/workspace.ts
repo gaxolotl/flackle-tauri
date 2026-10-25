@@ -53,7 +53,9 @@ export const mentionCounts = writable<Record<string, number>>({});
 export const connection = writable<"connecting" | "online" | "offline">(
   api.inTauri ? "connecting" : "online",
 );
-export const typing = writable<Record<string, { name: string; expires: number }>>({});
+export const typing = writable<
+  Record<string, { userId: string; name: string; expires: number }>
+>({});
 export const newMessagesMarker = writable<{ key: string; id: string } | null>(null);
 active.subscribe((value) => {
   if (typeof localStorage === "undefined" || !value) return;
@@ -127,32 +129,10 @@ async function syncPresence() {
 }
 
 export async function syncTypingIndicator() {
+  // The custom typing indicator is an account setting saved from Settings.
+  // Typing events themselves are always shared, as they are on Flackle.
   if (!api.inTauri) return;
-  const user = get(me);
-  if (!get(prefs).shareTyping) {
-    await api.updateTypingIndicator(false).catch(() => {});
-    return;
-  }
-  const text =
-    user?.typing_indicator_text?.trim() &&
-    /^(is|are|was)\s+\S/i.test(user.typing_indicator_text.trim())
-      ? user.typing_indicator_text.trim()
-      : "is typing";
-  const style = user?.typing_indicator_style === "emojis" ? "emojis" : "dots";
-  await api
-    .updateTypingIndicator(true, text, style)
-    .then(() => {
-      const current = get(me);
-      if (current) {
-        me.set({
-          ...current,
-          typing_indicator_enabled: true,
-          typing_indicator_text: text,
-          typing_indicator_style: style,
-        });
-      }
-    })
-    .catch(() => {});
+  if (!get(prefs).shareTyping) await stopTypingInChannel();
 }
 
 function lastChannelKey() {
@@ -634,23 +614,68 @@ export async function moveChannelToCategory(
   await reloadChannels(server);
 }
 
+function mergeMember(current: Member, updated: Member): Member {
+  return {
+    ...current,
+    ...updated,
+    user: updated.user?.id ? { ...current.user, ...updated.user } : current.user,
+  };
+}
+
+function syncMemberSections(list: Member[]) {
+  const currentSections = get(memberSections);
+  const roles = get(serverRoles);
+  if (currentSections.length === 0 || roles.length === 0) return;
+
+  const hoisted = roles
+    .filter((role) => role.hoist && !role.is_everyone)
+    .sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
+  if (hoisted.length === 0) {
+    memberSections.set(currentSections.filter((section) => !section.role_id));
+    return;
+  }
+
+  const roleSections = hoisted
+    .map((role) => {
+      const memberIds = list
+        .filter((member) => (member.role_ids ?? member.roles ?? []).includes(role.id))
+        .map((member) => member.user.id);
+      return {
+        key: `role:${role.id}`,
+        label: role.name,
+        role_id: role.id,
+        count: memberIds.length,
+        member_ids: memberIds,
+      };
+    })
+    .filter((section) => section.count > 0);
+
+  const rest = currentSections.filter((section) => !section.role_id);
+  memberSections.set([...roleSections, ...rest]);
+}
+
 export async function setMemberRoles(userId: string, add: string[], remove: string[]) {
   const current = get(active);
   if (current?.kind !== "guild") return null;
   const updated = await api.setMemberRoles(current.serverId, userId, add, remove);
-  members.update((list) =>
-    list.map((member) =>
-      member.user.id === userId
-        ? {
-            ...member,
-            ...updated,
-            user: updated.user?.id
-              ? { ...member.user, ...updated.user }
-              : member.user,
-          }
-        : member,
-    ),
-  );
+  let nextMembers: Member[] = [];
+  members.update((list) => {
+    nextMembers = list.map((member) =>
+      member.user.id === userId ? mergeMember(member, updated) : member,
+    );
+    return nextMembers;
+  });
+  syncMemberSections(nextMembers);
+
+  const cached = memberCache.get(current.serverId);
+  if (cached) {
+    memberCache.set(
+      current.serverId,
+      cached.map((member) =>
+        member.user.id === userId ? mergeMember(member, updated) : member,
+      ),
+    );
+  }
   return updated;
 }
 
@@ -994,7 +1019,7 @@ export async function setTypingFor(channelKey: string, userId: string, isTyping:
   const name = person?.display_name || person?.username || "Someone";
   typing.update((map) => ({
     ...map,
-    [entryKey]: { name, expires: Date.now() + 6000 },
+    [entryKey]: { userId, name, expires: Date.now() + 6000 },
   }));
   setTimeout(() => {
     typing.update((map) => {

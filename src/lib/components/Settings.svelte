@@ -25,6 +25,8 @@
   import { confirmAction } from "../dialog";
   import { me, modal, notify, setMyStatus, showMembers } from "../workspace";
   import Avatar from "./Avatar.svelte";
+  import Emoji from "./Emoji.svelte";
+  import EmojiPicker from "./EmojiPicker.svelte";
   import Icon from "./Icon.svelte";
   import Mark from "./Mark.svelte";
   import SecuritySettings from "./SecuritySettings.svelte";
@@ -87,9 +89,29 @@
   let status = $me?.status ?? "online";
   let signingOut = false;
   let capturing: KeybindAction | null = null;
+  let typingLoaded = false;
+  let typingEnabled = true;
+  let typingText = "is typing";
+  let typingStyle: "dots" | "emojis" = "dots";
+  let typingEmojis = ["", "", ""];
+  let typingSaving = false;
+  let typingError = "";
+  let typingPicker: { index: number; x: number; y: number } | null = null;
 
   $: currentTab = tabs.find((item) => item.id === tab) ?? tabs[0];
   $: if ($me?.status && $me.status !== status) status = $me.status;
+  $: if (!typingLoaded && $me) {
+    typingEnabled = $me.typing_indicator_enabled ?? false;
+    typingText = $me.typing_indicator_text?.trim() || "is typing";
+    typingStyle = $me.typing_indicator_style === "emojis" ? "emojis" : "dots";
+    typingEmojis = [0, 1, 2].map((index) => $me?.typing_indicator_emojis?.[index] ?? "");
+    typingLoaded = true;
+  }
+  $: typingTextValid = isValidTypingText(typingText);
+  $: typingEmojisValid = typingEmojis.every((emoji) => emoji.trim().length > 0);
+  $: typingPreviewText = typingTextValid ? typingText.trim() : "is typing...";
+  $: typingPreviewEmojis =
+    typingStyle === "emojis" && typingEmojisValid ? typingEmojis : null;
 
   onMount(() => {
     const capture = (event: KeyboardEvent) => {
@@ -159,8 +181,83 @@
     setPreference(key, !$prefs[key]);
   }
 
-  function toggleShareTyping() {
-    setPreference("shareTyping", !$prefs.shareTyping);
+  function isValidTypingText(value: string) {
+    const text = value.trim();
+    return text.length >= 2 && text.length <= 40 && /^(is|are|was)\s+\S/i.test(text);
+  }
+
+  async function saveTyping() {
+    if (typingSaving) return;
+    if (typingEnabled && !typingTextValid) {
+      typingError =
+        'Must start with "is", "are", or "was" followed by more text, and be 40 characters or fewer.';
+      return;
+    }
+    if (typingEnabled && typingStyle === "emojis" && !typingEmojisValid) {
+      typingError = "Pick all three custom emojis before saving.";
+      return;
+    }
+    typingSaving = true;
+    typingError = "";
+    const previousEnabled = $me?.typing_indicator_enabled ?? false;
+    const fallbackText =
+      $me?.typing_indicator_text?.trim() && isValidTypingText($me.typing_indicator_text)
+        ? $me.typing_indicator_text.trim()
+        : "is typing";
+    const savedText = typingTextValid ? typingText.trim() : fallbackText;
+    const fallbackEmojis = ($me?.typing_indicator_emojis ?? [])
+      .map((emoji) => emoji.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const savedEmojis =
+      typingEmojisValid
+        ? typingEmojis.map((emoji) => emoji.trim())
+        : fallbackEmojis;
+    const savedStyle =
+      typingStyle === "emojis" && savedEmojis.length === 3 ? "emojis" : "dots";
+    try {
+      await api.updateTypingIndicator(
+        typingEnabled,
+        typingEnabled ? savedText : null,
+        typingEnabled ? savedStyle : null,
+        typingEnabled && savedStyle === "emojis" ? savedEmojis : null,
+      );
+      me.update((current) =>
+        current
+          ? {
+              ...current,
+              typing_indicator_enabled: typingEnabled,
+              typing_indicator_text: savedText,
+              typing_indicator_style: savedStyle,
+              typing_indicator_emojis: savedStyle === "emojis" ? savedEmojis : current.typing_indicator_emojis,
+            }
+          : current,
+      );
+      notify("Typing indicator updated.");
+    } catch (error) {
+      typingEnabled = previousEnabled;
+      typingError = error instanceof Error ? error.message : String(error);
+      notify(typingError);
+    } finally {
+      typingSaving = false;
+    }
+  }
+
+  function pickTypingEmoji(event: MouseEvent, index: number) {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    typingPicker = { index, x: rect.left, y: rect.bottom };
+  }
+
+  function chooseTypingEmoji(emoji: string) {
+    if (!typingPicker) return;
+    const next = [...typingEmojis];
+    next[typingPicker.index] = emoji;
+    typingEmojis = next;
+    typingError = "";
+  }
+
+  function closeTypingPicker() {
+    typingPicker = null;
   }
 
   async function signOut() {
@@ -509,18 +606,128 @@
                 on:click={() => setPreference("showTyping", !$prefs.showTyping)}
               ><span></span></button>
             </div>
-            <div class="setting-row">
+          </div>
+
+          <div class="section-title">Your typing indicator</div>
+          <p class="section-note">
+            This is what Flackle shows while you type. The phrase must start with “is”,
+            “are”, or “was” and can be up to 40 characters.
+          </p>
+          <div class="typing-card">
+            <div class="typing-toggle-row">
               <div>
-                <b>Share typing indicator</b>
-                <p>Let other people see when you are typing. This uses your Flackle typing-indicator account setting.</p>
+                <b>Custom typing indicator</b>
+                <p>Shown when you're the only one typing. This is your Flackle account setting.</p>
               </div>
               <button
                 class="toggle"
-                class:on={$prefs.shareTyping}
-                aria-pressed={$prefs.shareTyping}
-                aria-label="Share typing indicator"
-                on:click={toggleShareTyping}
+                class:on={typingEnabled}
+                aria-pressed={typingEnabled}
+                aria-label="Custom typing indicator"
+                on:click={() => {
+                  typingEnabled = !typingEnabled;
+                  typingError = "";
+                }}
               ><span></span></button>
+            </div>
+
+            {#if typingEnabled}
+              <div class="typing-preview">
+                <Avatar user={$me} size={26} status={false} />
+                <div class="typing-preview-copy">
+                  <b>{$me?.display_name || $me?.username}</b>
+                  <span class="typing-preview-line">
+                    {#if typingPreviewEmojis}
+                      <span class="typing-preview-emojis">
+                        {#each typingPreviewEmojis as emoji}
+                          <Emoji char={emoji} size={15} />
+                        {/each}
+                      </span>
+                    {:else}
+                      <span class="typing-dots" class:static={$prefs.noTypingAnimation}>
+                        <i></i><i></i><i></i>
+                      </span>
+                    {/if}
+                    {typingPreviewText}
+                  </span>
+                </div>
+                <span class="typing-preview-badge">Preview</span>
+              </div>
+
+              <label class="typing-field">
+                <span class="field-label">Typing phrase</span>
+                <input
+                  bind:value={typingText}
+                  maxlength="40"
+                  placeholder="is typing"
+                  spellcheck="false"
+                  class:invalid={!typingTextValid}
+                  on:input={() => (typingError = "")}
+                />
+              </label>
+
+              <div class="typing-field">
+                <span class="field-label">Indicator style</span>
+                <div class="segmented">
+                  <button
+                    class:selected={typingStyle === "dots"}
+                    on:click={() => {
+                      typingStyle = "dots";
+                      typingError = "";
+                    }}>Typing dots</button
+                  >
+                  <button
+                    class:selected={typingStyle === "emojis"}
+                    on:click={() => {
+                      typingStyle = "emojis";
+                      typingError = "";
+                    }}>Custom emojis</button
+                  >
+                </div>
+              </div>
+
+              {#if typingStyle === "emojis"}
+                <div class="typing-field">
+                  <span class="field-label">Custom emojis</span>
+                  <div class="typing-emoji-picks">
+                    {#each typingEmojis as emoji, index}
+                      <button
+                        type="button"
+                        class="typing-emoji-pick"
+                        class:filled={!!emoji}
+                        aria-label={`Pick custom emoji ${index + 1}`}
+                        on:click={(event) => pickTypingEmoji(event, index)}
+                      >
+                        {#if emoji}
+                          <Emoji char={emoji} size={22} />
+                        {:else}
+                          <Icon name="plus" size={16} />
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              {#if !typingTextValid}
+                <p class="typing-error">
+                  Must start with “is”, “are”, or “was” followed by more text, and be 40
+                  characters or fewer.
+                </p>
+              {:else if typingStyle === "emojis" && !typingEmojisValid}
+                <p class="typing-error">Pick all three emojis to use custom emojis.</p>
+              {:else if typingError}
+                <p class="typing-error">{typingError}</p>
+              {/if}
+            {:else if typingError}
+              <p class="typing-error">{typingError}</p>
+            {/if}
+
+            <div class="typing-actions">
+              <span>{typingEnabled ? "Custom indicator is on" : "Standard typing indicator is used"}</span>
+              <button class="typing-save" disabled={typingSaving} on:click={saveTyping}>
+                {typingSaving ? "Saving…" : "Save typing indicator"}
+              </button>
             </div>
           </div>
 
@@ -631,6 +838,15 @@
     </section>
   </div>
 </div>
+
+{#if typingPicker}
+  <EmojiPicker
+    x={typingPicker.x}
+    y={typingPicker.y}
+    onSelect={chooseTypingEmoji}
+    onClose={closeTypingPicker}
+  />
+{/if}
 
 <style>
   .backdrop {
@@ -838,6 +1054,200 @@
     font-size: 11px;
     color: var(--muted);
     margin: 0 0 10px;
+  }
+  .typing-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 13px;
+    background: var(--panel-2);
+  }
+  .typing-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 50px;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--input);
+  }
+  .typing-preview-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+  }
+  .typing-preview-copy b {
+    font-size: 11.5px;
+    font-weight: 650;
+    color: var(--text);
+  }
+  .typing-preview-line {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    color: var(--muted);
+    min-width: 0;
+  }
+  .typing-preview-emojis {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+  }
+  .typing-preview-badge {
+    margin-left: auto;
+    flex: none;
+    padding: 3px 7px;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    color: var(--muted);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .typing-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 10px;
+    margin-right: 1px;
+  }
+  .typing-dots i {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--muted);
+    animation: typing-bounce 1.2s infinite ease-in-out;
+  }
+  .typing-dots i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .typing-dots i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+  .typing-dots.static i {
+    animation: none;
+  }
+  @keyframes typing-bounce {
+    0%,
+    60%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.45;
+    }
+    30% {
+      transform: translateY(-3px);
+      opacity: 1;
+    }
+  }
+  .typing-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .typing-toggle-row > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .typing-toggle-row b {
+    font-size: 11.5px;
+    font-weight: 650;
+    color: var(--text);
+  }
+  .typing-toggle-row p {
+    margin: 2px 0 0;
+    font-size: 10px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .typing-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .typing-field input {
+    height: 36px;
+    padding: 0 11px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--input);
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+  }
+  .typing-field input:focus {
+    border-color: rgba(var(--accent-rgb), 0.55);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.1);
+  }
+  .typing-field input.invalid {
+    border-color: rgba(255, 107, 107, 0.55);
+  }
+  .typing-field .segmented {
+    align-self: flex-start;
+  }
+  .typing-emoji-picks {
+    display: flex;
+    gap: 8px;
+  }
+  .typing-emoji-pick {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--input);
+    color: var(--muted);
+  }
+  .typing-emoji-pick:hover {
+    border-color: var(--line-strong);
+    color: var(--text);
+  }
+  .typing-emoji-pick.filled {
+    border-color: rgba(var(--accent-rgb), 0.3);
+    background: var(--panel-3);
+  }
+  .typing-error {
+    margin: 0;
+    color: #ff9a9a;
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+  .typing-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 11px;
+    border-top: 1px solid var(--line);
+  }
+  .typing-actions > span {
+    flex: 1;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .typing-save {
+    flex: none;
+    height: 31px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 650;
+  }
+  .typing-save:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+  .typing-save:disabled {
+    opacity: 0.55;
+    cursor: default;
   }
   .status-grid {
     display: grid;

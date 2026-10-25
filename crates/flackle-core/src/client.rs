@@ -1293,6 +1293,7 @@ impl Client {
         enabled: bool,
         text: Option<&str>,
         style: Option<&str>,
+        emojis: Option<Vec<String>>,
     ) -> Result<()> {
         let mut body = json!({ "enabled": enabled });
         if enabled {
@@ -1301,6 +1302,11 @@ impl Client {
             }
             if let Some(style) = style {
                 body["style"] = json!(style);
+            }
+            if style == Some("emojis") {
+                if let Some(emojis) = emojis {
+                    body["emojis"] = json!(emojis);
+                }
             }
         }
         let _: Value = self
