@@ -735,6 +735,7 @@ async fn send_message(
     content: String,
     attachments: Option<Vec<Attachment>>,
     reply_to: Option<String>,
+    nonce: Option<String>,
 ) -> Result<Message, String> {
     state
         .client
@@ -743,6 +744,7 @@ async fn send_message(
             content,
             attachments.unwrap_or_default(),
             reply_to,
+            nonce,
         )
         .await
         .map_err(error_text)

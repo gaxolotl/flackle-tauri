@@ -526,6 +526,7 @@ export async function sendMessage(
   content: string,
   attachments: Attachment[] = [],
   replyTo?: string | null,
+  nonce?: string | null,
 ): Promise<Message> {
   if (!inTauri) {
     await wait(220);
@@ -536,6 +537,7 @@ export async function sendMessage(
       is_deleted: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      nonce: nonce ?? null,
       sender: demoBootstrap.me,
       attachments,
       reply_to: replyTo
@@ -553,6 +555,7 @@ export async function sendMessage(
     content,
     attachments,
     replyTo: replyTo ?? null,
+    nonce: nonce ?? null,
   });
 }
 

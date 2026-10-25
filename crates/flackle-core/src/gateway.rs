@@ -13,7 +13,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
-const ACK_GRACE: Duration = Duration::from_millis(1500);
+const ACK_GRACE: Duration = Duration::from_millis(150);
 const HEARTBEAT: Duration = Duration::from_secs(45);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(65);
 
@@ -617,6 +617,7 @@ fn handle_ack(shared: &Arc<Shared>, payload: &Value) {
                             kind: "text".to_string(),
                             created_at: now.clone(),
                             updated_at: now,
+                            nonce: Some(nonce),
                             sender: shared.user.read().unwrap().as_ref().map(|u| u.user.clone()),
                             attachments: attachments.unwrap_or_default(),
                             embeds: embeds.unwrap_or_default(),

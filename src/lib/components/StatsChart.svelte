@@ -84,7 +84,9 @@
     {/if}
   </div>
 {:else if loading}
-  <div class="chart-state"><span>Loading chart…</span></div>
+  <div class="chart-skeleton" role="status" aria-label="Loading chart">
+    <span class="skeleton-plot"></span>
+  </div>
 {:else if points.length === 0}
   <div class="chart-state"><span>No activity recorded for this period.</span></div>
 {:else}
@@ -150,6 +152,27 @@
     color: var(--muted);
     font-size: 11.5px;
     text-align: center;
+  }
+  .chart-skeleton {
+    min-height: 190px;
+    padding: 14px 10px 28px 44px;
+    display: flex;
+  }
+  .skeleton-plot {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    animation: skeleton-pulse 1.35s ease-in-out infinite;
+  }
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.75;
+    }
   }
   .chart-state button {
     border: 1px solid var(--line-strong);

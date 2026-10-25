@@ -16,6 +16,7 @@ import type {
   Member,
   MemberListSection,
   Message,
+  MessageReply,
   Role,
   SelfUser,
   Server,
@@ -760,6 +761,57 @@ export async function loadMessagesAround(messageId: string) {
 
 let pendingCounter = 0;
 
+function messageNonce(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+  return `${Date.now().toString(16)}${(++pendingCounter).toString(16)}`;
+}
+
+function replyFromMessage(message: Message): MessageReply {
+  const sender = message.sender ?? message.author ?? null;
+  return {
+    id: message.id,
+    content: message.content,
+    sender_id: sender?.id ?? message.sender_id ?? "",
+    sender_username: sender?.username ?? message.sender_username ?? null,
+    sender_display_name: sender?.display_name ?? message.sender_display_name ?? null,
+    sender_avatar_url: sender?.avatar_url ?? message.sender_avatar_url ?? null,
+    deleted: message.is_deleted,
+  };
+}
+
+function mergeReply(
+  existing?: MessageReply | null,
+  incoming?: MessageReply | null,
+): MessageReply | null {
+  if (!incoming) return existing ?? null;
+  if (!existing) return incoming;
+  return {
+    ...existing,
+    ...incoming,
+    content: incoming.content || existing.content,
+    sender_id: incoming.sender_id || existing.sender_id,
+    sender_username: incoming.sender_username || existing.sender_username,
+    sender_display_name: incoming.sender_display_name || existing.sender_display_name,
+    sender_avatar_url: incoming.sender_avatar_url || existing.sender_avatar_url,
+  };
+}
+
+function mergeMessage(existing: Message, incoming: Message): Message {
+  return {
+    ...existing,
+    ...incoming,
+    nonce: incoming.nonce ?? existing.nonce,
+    sender: incoming.sender ?? existing.sender,
+    attachments: incoming.attachments?.length ? incoming.attachments : existing.attachments,
+    embeds: incoming.embeds?.length ? incoming.embeds : existing.embeds,
+    reply_to: mergeReply(existing.reply_to, incoming.reply_to),
+    pending: false,
+    failed: false,
+  };
+}
+
 export async function attachFiles(paths: string[]) {
   const current = get(active);
   if (!current || paths.length === 0) return;
@@ -792,7 +844,7 @@ export function clearPendingAttachments() {
 
 export async function sendMessage(
   content: string,
-  replyTo?: string | null,
+  replyTarget: Message | null = null,
   attachments: Attachment[] = [],
 ) {
   const current = get(active);
@@ -800,6 +852,7 @@ export async function sendMessage(
   const trimmed = content.trim();
   if (!trimmed && attachments.length === 0) return;
   const user = get(me);
+  const nonce = messageNonce();
   const temporary: Message = {
     id: `pending-${++pendingCounter}`,
     content: trimmed,
@@ -807,16 +860,11 @@ export async function sendMessage(
     is_deleted: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    nonce,
     sender: user,
     pending: true,
     attachments,
-    reply_to: replyTo
-      ? {
-          id: replyTo,
-          content: "",
-          sender_id: "",
-        }
-      : null,
+    reply_to: replyTarget ? replyFromMessage(replyTarget) : null,
   };
   messages.update((list) => [...list, temporary]);
   try {
@@ -824,13 +872,25 @@ export async function sendMessage(
       targetOf(current),
       trimmed,
       attachments,
-      replyTo ?? null,
+      replyTarget?.id ?? null,
+      nonce,
     );
-    messages.update((list) =>
-      list.map((item) =>
-        item.id === temporary.id ? { ...message, pending: false } : item,
-      ),
-    );
+    if (!message.id) return;
+    messages.update((list) => {
+      const existing = list.find((item) => item.id === message.id);
+      if (existing) {
+        return list
+          .filter((item) => item.id !== temporary.id)
+          .map((item) => (item.id === message.id ? mergeMessage(item, message) : item));
+      }
+      const index = list.findIndex((item) => item.id === temporary.id);
+      if (index >= 0) {
+        const next = [...list];
+        next[index] = mergeMessage(temporary, message);
+        return next;
+      }
+      return [...list, message];
+    });
     if (get(prefs).linkPreviews && trimmed) {
       void attachLinkPreviews(current, message, trimmed);
     }
@@ -1084,11 +1144,20 @@ export function handleGatewayEvent(raw: unknown) {
       }
 
       if (inActiveGuild || inActiveConversation) {
-        messages.update((list) =>
-          list.some((item) => item.id === message.id)
-            ? list.map((item) => (item.id === message.id ? message : item))
-            : [...list, message],
-        );
+        messages.update((list) => {
+          const existing = list.find((item) => item.id === message.id);
+          const pending = message.nonce
+            ? list.find(
+                (item) =>
+                  item.id.startsWith("pending-") && item.nonce === message.nonce,
+              )
+            : undefined;
+          const base = existing ?? pending;
+          if (!base) return [...list, message];
+          return list
+            .filter((item) => item.id === base.id || item.id !== pending?.id)
+            .map((item) => (item.id === base.id ? mergeMessage(item, message) : item));
+        });
         void api.markRead(targetOf(current), message.id).catch(() => {});
       } else if (serverId && channelId) {
         const key = `${serverId}:${channelId}`;

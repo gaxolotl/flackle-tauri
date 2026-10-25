@@ -563,7 +563,21 @@
       <button on:click={retryBundle}>Try again</button>
     </div>
   {:else if bundleLoading && !bundle}
-    <div class="stats-loading"><span class="spin"></span><span>Loading stats…</span></div>
+    <div class="stats-skeleton" role="status" aria-label="Loading stats">
+      <span class="skeleton-block skeleton-title"></span>
+      <div class="skeleton-metrics">
+        {#each [0, 1, 2] as index}
+          <div class="skeleton-metric">
+            <span class="skeleton-block skeleton-label" style={`animation-delay: ${index * 80}ms`}></span>
+            <span class="skeleton-block skeleton-value" style={`animation-delay: ${index * 80}ms`}></span>
+          </div>
+        {/each}
+      </div>
+      <div class="skeleton-chart">
+        <span class="skeleton-block skeleton-chart-title"></span>
+        <span class="skeleton-block skeleton-chart-plot"></span>
+      </div>
+    </div>
   {:else}
     <div class="stats-inner">
       <section class="stats-section">
@@ -790,7 +804,9 @@
                 <button on:click={retryCalendar}>Try again</button>
               </div>
             {:else if calendarLoading && !calendar}
-              <div class="chart-loading">Loading calendar…</div>
+              <div class="chart-skeleton" role="status" aria-label="Loading calendar">
+                <span class="skeleton-block skeleton-heatmap"></span>
+              </div>
             {:else if calendarModel.cells.length === 0}
               <div class="chart-loading">No activity recorded for this year.</div>
             {:else}
@@ -857,7 +873,9 @@
                 <button on:click={retryPunchcard}>Try again</button>
               </div>
             {:else if punchcardLoading && !punchcard}
-              <div class="chart-loading">Loading hourly activity…</div>
+              <div class="chart-skeleton" role="status" aria-label="Loading hourly activity">
+                <span class="skeleton-block skeleton-punchcard"></span>
+              </div>
             {:else}
               <div class="punchcard-shell">
                 <div class="punch-hours">
@@ -1222,7 +1240,6 @@
   .punch-grid .heat-cell:disabled {
     cursor: default;
   }
-  .stats-loading,
   .stats-denied {
     min-height: 260px;
     display: flex;
@@ -1235,11 +1252,89 @@
     color: var(--muted);
     font-size: 11.5px;
   }
-  .stats-loading {
-    flex-direction: row;
-  }
   .stats-denied p {
     margin: 0;
+  }
+  .stats-skeleton {
+    width: min(860px, 100%);
+    margin: 0 auto;
+    padding: 30px 24px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .skeleton-block {
+    display: block;
+    background: var(--panel-3);
+    border-radius: 8px;
+    animation: skeleton-pulse 1.35s ease-in-out infinite;
+  }
+  .skeleton-title {
+    width: 128px;
+    height: 18px;
+  }
+  .skeleton-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .skeleton-metric {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel-2);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .skeleton-label {
+    width: 58%;
+    height: 8px;
+  }
+  .skeleton-value {
+    width: 38%;
+    height: 22px;
+  }
+  .skeleton-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .skeleton-chart-title {
+    width: 92px;
+    height: 12px;
+  }
+  .skeleton-chart-plot {
+    width: 100%;
+    height: 190px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    border-radius: 10px;
+  }
+  .chart-skeleton {
+    min-height: 150px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+  }
+  .skeleton-heatmap,
+  .skeleton-punchcard {
+    flex: 1;
+    min-height: 126px;
+    border-radius: 6px;
+  }
+  .skeleton-punchcard {
+    min-height: 138px;
+  }
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.75;
+    }
   }
   .denied-icon {
     width: 44px;
@@ -1251,25 +1346,15 @@
     background: var(--panel-2);
     color: var(--muted);
   }
-  .spin {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid var(--line-strong);
-    border-top-color: var(--accent);
-    animation: spin 0.7s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   @media (max-width: 720px) {
     .stats-inner {
       padding: 26px 15px 52px;
       gap: 36px;
     }
+    .stats-skeleton {
+      padding: 26px 15px 52px;
+    }
+    .skeleton-metrics,
     .metric-grid {
       grid-template-columns: 1fr;
     }

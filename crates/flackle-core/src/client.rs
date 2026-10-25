@@ -70,7 +70,7 @@ fn encode(value: &str) -> String {
     percent_encoding::utf8_percent_encode(value, percent_encoding::NON_ALPHANUMERIC).to_string()
 }
 
-fn nonce() -> String {
+fn new_nonce() -> String {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -1100,6 +1100,7 @@ impl Client {
         content: String,
         attachments: Vec<Attachment>,
         reply_to: Option<String>,
+        nonce: Option<String>,
     ) -> Result<Message> {
         if content.is_empty() && attachments.is_empty() {
             return Err(Error::Other(
@@ -1110,7 +1111,7 @@ impl Client {
             return Err(Error::GatewayClosed);
         }
 
-        let nonce = nonce();
+        let nonce = nonce.unwrap_or_else(new_nonce);
         let (tx, rx) = oneshot::channel();
         self.inner.shared.pending.lock().unwrap().insert(
             nonce.clone(),
@@ -1192,7 +1193,7 @@ impl Client {
         if !self.is_connected() {
             return Err(Error::GatewayClosed);
         }
-        let nonce = nonce();
+        let nonce = new_nonce();
         let (tx, rx) = oneshot::channel();
         self.inner
             .shared

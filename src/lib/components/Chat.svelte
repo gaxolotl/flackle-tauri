@@ -1,7 +1,7 @@
 <script lang="ts">
   import { afterUpdate, onMount, tick } from "svelte";
   import * as api from "../api";
-  import { formatDay, formatSize, formatTime, renderContent, sameDay } from "../format";
+  import { formatDay, formatSize, formatTime, renderContent, sameDay, truncateText } from "../format";
   import { prefs } from "../preferences";
   import { getRecentEmoji, pushRecentEmoji, searchEmoji } from "../emoji";
   import type { Active, Attachment, Channel, Embed, Message, Role, User } from "../types";
@@ -87,6 +87,15 @@
   let suggestionEnd = 0;
   let recentEmoji = getRecentEmoji();
 
+  const messageSkeletons = [
+    { name: 92, lines: [94, 58] },
+    { name: 74, lines: [88] },
+    { name: 108, lines: [96, 72] },
+    { name: 82, lines: [66] },
+    { name: 96, lines: [91, 44] },
+    { name: 70, lines: [84] },
+  ];
+
   $: currentKey = $active ? activeKey($active) : "";
   $: if (currentKey !== lastKey) {
     if (previousActive) void stopTypingInChannel(previousActive);
@@ -106,7 +115,7 @@
     void tick().then(() => {
       resize();
       scrollToBottom(false);
-      composer?.blur();
+      if (!isStats && canSendMessages) composer?.focus();
     });
   }
   $: typingEntries = $prefs.showTyping
@@ -205,7 +214,10 @@
   });
 
   onMount(() => {
-    void tick().then(() => scrollToBottom(false));
+    void tick().then(() => {
+      scrollToBottom(false);
+      if (!isStats && canSendMessages) composer?.focus();
+    });
   });
 
   function scrollToBottom(smooth: boolean) {
@@ -398,7 +410,7 @@
     }
     if (!text.trim() && $pendingAttachments.length === 0) return;
     const content = text;
-    const reply = replyTarget?.id ?? null;
+    const reply = replyTarget;
     const attachments = [...$pendingAttachments];
     text = "";
     replyTarget = null;
@@ -620,7 +632,7 @@
   }
 
   function replyContent(message: Message): string {
-    return replyPreview(message)?.content ?? "";
+    return truncateText(replyPreview(message)?.content ?? "");
   }
 
   function senderOf(message: Message | null) {
@@ -957,9 +969,33 @@
     />
   {:else}
   <div class="messages" bind:this={scroller} on:scroll={onScroll}>
-    <div class="messages-inner" class:empty={$messages.length === 0}>
+    <div class="messages-inner" class:empty={$messages.length === 0 && !$loadingMessages}>
       {#if $loadingMessages && $messages.length === 0}
-        <div class="loading"><span class="spin"></span><span>Loading messages…</span></div>
+        <div class="message-skeleton" role="status" aria-label="Loading messages">
+          {#each messageSkeletons as row, index}
+            <div class="skeleton-row">
+              <span class="skeleton-avatar" style={`animation-delay: ${index * 70}ms`}></span>
+              <div class="skeleton-body">
+                <div class="skeleton-meta">
+                  <span
+                    class="skeleton-name"
+                    style={`width: ${row.name}px; animation-delay: ${index * 70}ms`}
+                  ></span>
+                  <span
+                    class="skeleton-time"
+                    style={`animation-delay: ${index * 70}ms`}
+                  ></span>
+                </div>
+                {#each row.lines as width, lineIndex}
+                  <span
+                    class="skeleton-line"
+                    style={`width: ${width}%; animation-delay: ${(index + lineIndex) * 70}ms`}
+                  ></span>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        </div>
       {:else if $messages.length === 0}
         <div class="channel-start">
           <div class="start-icon">
@@ -1534,15 +1570,68 @@
   .messages-inner.empty {
     justify-content: center;
   }
-  .loading {
-    height: 45vh;
+  .message-skeleton {
+    width: 100%;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
     gap: 12px;
-    color: var(--muted);
-    font-size: 12px;
+    padding: 18px 4px 8px;
+  }
+  .skeleton-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+  }
+  .skeleton-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--panel-3);
+    flex: none;
+    animation: skeleton-pulse 1.35s ease-in-out infinite;
+  }
+  .skeleton-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 2px;
+  }
+  .skeleton-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .skeleton-name,
+  .skeleton-time,
+  .skeleton-line {
+    display: block;
+    background: var(--panel-3);
+    border-radius: 99px;
+    animation: skeleton-pulse 1.35s ease-in-out infinite;
+  }
+  .skeleton-name {
+    height: 9px;
+  }
+  .skeleton-time {
+    width: 32px;
+    height: 7px;
+    opacity: 0.7;
+  }
+  .skeleton-line {
+    height: 10px;
+    max-width: 100%;
+  }
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 0.38;
+    }
+    50% {
+      opacity: 0.78;
+    }
   }
   .channel-start {
     padding: 28px 0 34px;
@@ -1621,9 +1710,6 @@
   .message.grouped {
     padding-top: 1px;
     padding-bottom: 1px;
-  }
-  .message.pending {
-    opacity: 0.62;
   }
   .message.failed .content {
     color: #ff9a9a;

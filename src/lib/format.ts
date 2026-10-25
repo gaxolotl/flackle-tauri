@@ -144,6 +144,42 @@ export function renderContent(content: string, context?: RenderContext): string 
   return html;
 }
 
+type GraphemeSegmenter = {
+  segment: (input: string) => Iterable<{ segment: string }>;
+};
+type GraphemeSegmenterConstructor = new (
+  locales?: string | string[],
+  options?: { granularity: "grapheme" },
+) => GraphemeSegmenter;
+
+let graphemeSegmenter: GraphemeSegmenter | null | undefined;
+
+function graphemeUnits(value: string): string[] {
+  if (graphemeSegmenter === undefined) {
+    const Segmenter = (Intl as unknown as { Segmenter?: GraphemeSegmenterConstructor })
+      .Segmenter;
+    graphemeSegmenter = Segmenter
+      ? new Segmenter(undefined, { granularity: "grapheme" })
+      : null;
+  }
+  if (!graphemeSegmenter) return Array.from(value);
+  try {
+    return Array.from(graphemeSegmenter.segment(value), (entry) => entry.segment);
+  } catch {
+    return Array.from(value);
+  }
+}
+
+export function truncateText(value: string, limit = 40): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+  const units = graphemeUnits(compact);
+  if (units.length <= limit) return compact;
+  let truncated = units.slice(0, limit).join("");
+  truncated = truncated.replace(/<@&?\d*$|<#\d*$|&[a-zA-Z0-9#]+$/, "");
+  return `${truncated.trimEnd()}...`;
+}
+
 export function formatTime(iso: string, mode: TimeFormat = getTimeFormat()): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
