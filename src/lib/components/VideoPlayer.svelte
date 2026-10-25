@@ -13,7 +13,6 @@
   let volumeTrack: HTMLDivElement | undefined;
 
   let playing = false;
-  let ended = false;
   let duration = 0;
   let current = 0;
   let buffered = 0;
@@ -26,7 +25,6 @@
   let focused = false;
   let fullscreen = false;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
-  let clickTimer: ReturnType<typeof setTimeout> | undefined;
 
   $: progress = duration > 0 ? Math.min(100, (current / duration) * 100) : 0;
   $: volumePercent = muted ? 0 : Math.min(100, Math.max(0, volume * 100));
@@ -85,16 +83,11 @@
     }
   }
 
-  function onVideoClick() {
-    if (clickTimer) {
-      clearTimeout(clickTimer);
-      clickTimer = undefined;
-      return;
-    }
-    clickTimer = setTimeout(() => {
-      clickTimer = undefined;
-      togglePlay();
-    }, 180);
+  function onVideoClick(event: MouseEvent) {
+    // A double click fires two click events first; ignore the second so
+    // fullscreen does not also toggle playback twice.
+    if (event.detail > 1) return;
+    togglePlay();
   }
 
   function toggleFullscreen() {
@@ -108,10 +101,6 @@
 
   function onVideoDoubleClick(event: MouseEvent) {
     event.preventDefault();
-    if (clickTimer) {
-      clearTimeout(clickTimer);
-      clickTimer = undefined;
-    }
     toggleFullscreen();
   }
 
@@ -267,7 +256,6 @@
 
   onDestroy(() => {
     clearHideTimer();
-    if (clickTimer) clearTimeout(clickTimer);
   });
 </script>
 
@@ -289,6 +277,8 @@
     focused = false;
     scheduleHide();
   }}
+  on:click={onVideoClick}
+  on:dblclick={onVideoDoubleClick}
   on:mousemove={revealControls}
   on:mouseleave={onMouseLeave}
 >
@@ -298,18 +288,14 @@
     {src}
     preload="metadata"
     playsinline
-    on:click={onVideoClick}
-    on:dblclick={onVideoDoubleClick}
     on:loadedmetadata={onMetadata}
     on:durationchange={onMetadata}
     on:timeupdate={() => {
       current = video?.currentTime ?? 0;
-      if (video?.ended) ended = true;
     }}
     on:progress={updateBuffered}
     on:play={() => {
       playing = true;
-      ended = false;
       scheduleHide();
     }}
     on:pause={() => {
@@ -319,7 +305,6 @@
     }}
     on:ended={() => {
       playing = false;
-      ended = true;
       controlsVisible = true;
       clearHideTimer();
     }}
@@ -330,29 +315,12 @@
     }}
   ></video>
 
-  {#if !playing}
-    <button
-      class="play-overlay"
-      type="button"
-      aria-label="Play video"
-      on:click={onVideoClick}
-      on:dblclick={onVideoDoubleClick}
-    >
-      <span class="play-circle">
-        <svg viewBox="0 0 24 24" width="27" height="27" aria-hidden="true">
-          <path
-            fill="currentColor"
-            d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z"
-          />
-        </svg>
-      </span>
-    </button>
-  {/if}
-
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     class="controls"
     class:visible={controlsVisible}
+    on:click|stopPropagation
+    on:dblclick|stopPropagation
     on:mouseenter={() => {
       hoveringControls = true;
       controlsVisible = true;
@@ -514,38 +482,6 @@
     height: 100%;
     max-height: none;
     object-fit: contain;
-  }
-  .play-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: #fff;
-    cursor: pointer;
-  }
-  .play-circle {
-    width: 56px;
-    height: 56px;
-    display: grid;
-    place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(8px);
-    box-shadow: 0 7px 24px rgba(0, 0, 0, 0.34);
-    transition: transform 120ms ease, background 120ms ease;
-  }
-  .play-overlay:hover .play-circle {
-    transform: scale(1.08);
-    background: rgba(255, 255, 255, 0.24);
-  }
-  .play-circle svg {
-    margin-left: 2px;
   }
   .controls {
     position: absolute;
