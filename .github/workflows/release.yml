@@ -139,11 +139,16 @@ jobs:
 
       - name: Generate checksums
         run: |
+          : > SHA256SUMS.txt
           find artifacts -type f \
             \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.app.tar.gz' \) \
             -print0 |
-            sort -z |
-            xargs -0 -r sha256sum > SHA256SUMS.txt
+            while IFS= read -r -d '' file; do
+              name=$(basename "$file" | tr ' ' '.')
+              sha=$(sha256sum "$file" | cut -d' ' -f1)
+              printf '%s  %s\n' "$sha" "$name" >> SHA256SUMS.txt
+            done
+          sort -k2 SHA256SUMS.txt -o SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload assets
