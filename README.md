@@ -1,5 +1,10 @@
 # Flackle Desktop
 
+> **Flutter mobile client:** The native Android/iOS client lives in [`flutter/`](flutter/README.md).
+> It connects to the real Flackle service and covers messaging, friends, profiles, server and
+> channel management, channel icons, mutual connections, and server folders and ordering.
+> The existing Tauri desktop client remains available alongside it.
+
 <p align="center">
   <strong>A fast, native desktop client for Flackle.</strong><br>
   Rust core · Tauri 2 · Svelte 5 · Windows · macOS · Linux · ARM64
